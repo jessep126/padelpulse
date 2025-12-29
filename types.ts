@@ -7,18 +7,89 @@ export interface MatchPoint {
   frame?: string;
 }
 
-export interface PadelLocation {
-  name: string;
-  address: string;
-  uri: string;
-  rating?: string;
+export interface UserStats {
+  wins: number;
+  losses: number;
+  matches: number;
+  points: number;
 }
 
-export interface Tournament {
-  title: string;
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  level: string;
+}
+
+export type MatchStatus = 'pending' | 'confirmed' | 'disputed';
+
+export interface AppNotification {
+  id: string;
+  type: 'league_invite' | 'match_confirmation';
+  fromName: string;
+  leagueId?: string;
+  leagueName?: string;
+  matchId?: string;
+  timestamp: number;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
+export interface LeagueMember {
+  id: string;
+  name: string;
+  role: 'admin' | 'member';
+  wins: number;
+  matches: number;
+  avatar?: string;
+  email?: string;
+}
+
+export interface LeagueMatch {
+  id: string;
   date: string;
-  location: string;
-  link: string;
+  playerA: string; // ID
+  playerB: string; // ID
+  playerAName: string;
+  playerBName: string;
+  score: string;
+  winnerId: string;
+  status: MatchStatus;
+  confirmedBy: string[]; // List of User IDs
+}
+
+export interface League {
+  id: string;
+  name: string;
+  adminId: string;
+  members: LeagueMember[];
+  matches: LeagueMatch[];
+}
+
+export enum AppView {
+  DASHBOARD = 'dashboard',
+  RECORD = 'record',
+  DISCOVERY = 'discovery',
+  HIGHLIGHTS = 'highlights',
+  CREATE_TOURNAMENT = 'create_tournament',
+  MATCH_MODE_SELECT = 'match_mode_select',
+  MANUAL_SCORE = 'manual_score',
+  ONBOARDING = 'onboarding',
+  PROFILE = 'profile',
+  LEAGUE_DASHBOARD = 'league_dashboard',
+  CREATE_LEAGUE = 'create_league',
+  NOTIFICATIONS = 'notifications',
+  SELECT_OPPONENT = 'select_opponent'
+}
+
+export type TournamentType = 'Singles' | 'Doubles';
+
+export interface TournamentMatch {
+  id: string;
+  sideA: string[];
+  sideB: string[];
+  score: string;
+  completed: boolean;
 }
 
 export interface Player {
@@ -33,31 +104,16 @@ export interface Player {
   winRate?: string;
 }
 
-export interface UserStats {
-  wins: number;
-  losses: number;
-  matches: number;
-  points: number;
+export interface PadelLocation {
+  name: string;
+  address: string;
+  uri: string;
+  rating?: string;
 }
 
-export enum AppView {
-  DASHBOARD = 'dashboard',
-  RECORD = 'record',
-  DISCOVERY = 'discovery',
-  HIGHLIGHTS = 'highlights',
-  CREATE_TOURNAMENT = 'create_tournament',
-  MATCH_MODE_SELECT = 'match_mode_select',
-  MANUAL_SCORE = 'manual_score',
-  ONBOARDING = 'onboarding',
-  PROFILE = 'profile'
-}
-
-export type TournamentType = 'Singles' | 'Doubles';
-
-export interface TournamentMatch {
-  id: string;
-  sideA: string[];
-  sideB: string[];
-  score: string;
-  completed: boolean;
+export interface Tournament {
+  title: string;
+  date: string;
+  location: string;
+  link: string;
 }

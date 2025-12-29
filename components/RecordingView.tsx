@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Camera, StopCircle, RefreshCcw, Activity, ShieldAlert, Plus, Minus, Volume2, RotateCcw, Trophy, Save, Edit3 } from 'lucide-react';
+import { Camera, StopCircle, RefreshCcw, Activity, ShieldAlert, Plus, Minus, Volume2, Trophy, Save, Edit3, ChevronRight, Zap } from 'lucide-react';
 import { padelAI } from '../services/geminiService';
 import { MatchPoint, TournamentMatch } from '../types';
 
@@ -39,10 +39,11 @@ const PADEL_SCORES = ['0', '15', '30', '40', 'Ad', 'Game'];
 interface RecordingViewProps {
   tournamentMatch?: TournamentMatch | null;
   homeName: string;
+  opponentName: string;
   onFinish: (score: string, teamAWon: boolean) => void;
 }
 
-const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName, onFinish }) => {
+const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName, opponentName, onFinish }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -50,32 +51,33 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
   const [isRecording, setIsRecording] = useState(false);
   const [scoreA, setScoreA] = useState(0); 
   const [scoreB, setScoreB] = useState(0); 
+  const [gamesA, setGamesA] = useState(0);
+  const [gamesB, setGamesB] = useState(0);
   const [logs, setLogs] = useState<MatchPoint[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customOpponent, setCustomOpponent] = useState('Opponent');
+  const [showGameCelebration, setShowGameCelebration] = useState(false);
+  const [gameWinnerName, setGameWinnerName] = useState('');
 
   const teamAName = tournamentMatch ? tournamentMatch.sideA.join(' & ') : homeName;
-  const teamBName = tournamentMatch ? tournamentMatch.sideB.join(' & ') : customOpponent;
+  const teamBName = tournamentMatch ? tournamentMatch.sideB.join(' & ') : opponentName;
 
   const getScoreString = useCallback((sA: number, sB: number) => {
     return `${PADEL_SCORES[sA]}-${PADEL_SCORES[sB]}`;
   }, []);
 
-  const announceScore = async (winner: string, newScore: string) => {
+  const announceScore = async (winner: string, newScore: string, type: 'point' | 'game' = 'point') => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
-    const winName = winner === "Team A" ? teamAName : (winner === "Team B" ? teamBName : "");
-    const text = winner !== "none" ? `Point to ${winName}. Score is ${newScore}.` : `Current score is ${newScore}.`;
+    const winName = winner === "Team A" ? teamAName : teamBName;
+    const text = type === 'game' 
+      ? `Game set! ${winName} wins the game. The set score is ${gamesA} to ${gamesB}.`
+      : winner !== "none" ? `Point to ${winName}. Score is ${newScore}.` : `Score is ${newScore}.`;
+    
     const base64Audio = await padelAI.generateSpeech(text);
     if (base64Audio && audioCtxRef.current) {
-      const audioBuffer = await decodeAudioData(
-        decodeBase64(base64Audio),
-        audioCtxRef.current,
-        24000,
-        1
-      );
+      const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), audioCtxRef.current, 24000, 1);
       const source = audioCtxRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioCtxRef.current.destination);
@@ -83,289 +85,222 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
     }
   };
 
-  const startCamera = async () => {
-    try {
-      setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }, 
-        audio: true 
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      setError("Camera access denied. Please enable permissions.");
-      console.error(err);
+  const handlePoint = (team: 'A' | 'B') => {
+    let nextA = scoreA;
+    let nextB = scoreB;
+
+    if (team === 'A') {
+      if (scoreA === 3 && scoreB < 3) nextA = 5; // 40-0, 40-15, 40-30 -> Game
+      else if (scoreA === 3 && scoreB === 3) nextA = 4; // Deuce -> Ad
+      else if (scoreA === 4) nextA = 5; // Ad -> Game
+      else if (scoreA === 3 && scoreB === 4) { nextA = 3; nextB = 3; } // Opponent Ad -> Deuce
+      else nextA = scoreA + 1;
+    } else {
+      if (scoreB === 3 && scoreA < 3) nextB = 5;
+      else if (scoreB === 3 && scoreA === 3) nextB = 4;
+      else if (scoreB === 4) nextB = 5;
+      // Fixed typo 'i' to 'scoreA' to correctly handle Team A Advantage losing to Team B point
+      else if (scoreB === 3 && scoreA === 4) { nextB = 3; nextA = 3; }
+      else if (scoreB === 3 && scoreA === 4) { nextB = 3; nextA = 3; }
+      else nextB = scoreB + 1;
+    }
+
+    if (nextA === 5) {
+      const newGamesA = gamesA + 1;
+      setGamesA(newGamesA);
+      setGameWinnerName(teamAName);
+      setShowGameCelebration(true);
+      announceScore("Team A", "Game", "game");
+      setScoreA(0); setScoreB(0);
+    } else if (nextB === 5) {
+      const newGamesB = gamesB + 1;
+      setGamesB(newGamesB);
+      setGameWinnerName(teamBName);
+      setShowGameCelebration(true);
+      announceScore("Team B", "Game", "game");
+      setScoreA(0); setScoreB(0);
+    } else {
+      setScoreA(nextA);
+      setScoreB(nextB);
+      announceScore(team === 'A' ? "Team A" : "Team B", getScoreString(nextA, nextB));
     }
   };
 
-  useEffect(() => {
-    startCamera();
-    return () => {
-      const stream = videoRef.current?.srcObject as MediaStream;
-      stream?.getTracks().forEach(track => track.stop());
-    };
-  }, []);
+  const runAnalysis = async () => {
+    if (!isRecording || showGameCelebration) return;
+    const frame = captureFrame();
+    if (!frame) return;
+    setIsAnalyzing(true);
+    try {
+      const result = await padelAI.analyzeMatchFrame(frame, getScoreString(scoreA, scoreB));
+      if (result && result.winner !== "none") {
+        handlePoint(result.winner === "Team A" ? 'A' : 'B');
+        setLogs(prev => [{
+          timestamp: Date.now(),
+          score: getScoreString(scoreA, scoreB),
+          description: result.description,
+          isHighlight: result.isHighlight,
+          frame: `data:image/jpeg;base64,${frame}`
+        }, ...prev.slice(0, 19)]);
+      }
+    } catch (err) { console.error(err); } finally { setIsAnalyzing(false); }
+  };
 
   const captureFrame = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return null;
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return null;
-
     canvasRef.current.width = videoRef.current.videoWidth;
     canvasRef.current.height = videoRef.current.videoHeight;
     ctx.drawImage(videoRef.current, 0, 0);
-    
     return canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
   }, []);
 
-  const runAnalysis = async () => {
-    if (!isRecording) return;
-    const frame = captureFrame();
-    if (!frame) return;
-
-    setIsAnalyzing(true);
-    try {
-      const currentScoreStr = getScoreString(scoreA, scoreB);
-      const result = await padelAI.analyzeMatchFrame(frame, currentScoreStr);
-      
-      if (result) {
-        let win = result.winner;
-        let nextA = scoreA;
-        let nextB = scoreB;
-
-        if (win === "Team A") {
-          nextA = Math.min(scoreA + 1, 5);
-          setScoreA(nextA);
-        } else if (win === "Team B") {
-          nextB = Math.min(scoreB + 1, 5);
-          setScoreB(nextB);
-        }
-
-        const newScoreStr = getScoreString(nextA, nextB);
-
-        setLogs(prev => [{
-          timestamp: Date.now(),
-          score: newScoreStr,
-          description: result.description,
-          isHighlight: result.isHighlight,
-          frame: `data:image/jpeg;base64,${frame}`
-        }, ...prev.slice(0, 19)]);
-
-        if (win !== "none") {
-          announceScore(win, newScoreStr);
-        }
-      }
-    } catch (err) {
-      console.error("AI Analysis failed", err);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const manualAdjust = (team: 'A' | 'B', direction: 1 | -1) => {
-    let nextA = scoreA;
-    let nextB = scoreB;
-
-    if (team === 'A') {
-      nextA = Math.max(0, Math.min(scoreA + direction, 5));
-      setScoreA(nextA);
-    } else {
-      nextB = Math.max(0, Math.min(scoreB + direction, 5));
-      setScoreB(nextB);
-    }
-
-    const newScore = getScoreString(nextA, nextB);
-    announceScore("none", newScore);
-    
-    setLogs(prev => [{
-      timestamp: Date.now(),
-      score: newScore,
-      description: `Manual adjustment for ${team === 'A' ? teamAName : teamBName}`,
-      isHighlight: false,
-    }, ...prev.slice(0, 19)]);
-  };
-
-  const handleSaveAndExit = () => {
-    if (confirm("Finish match and save score?")) {
-      onFinish(getScoreString(scoreA, scoreB), scoreA > scoreB);
-    }
-  };
-
   useEffect(() => {
     let interval: number;
-    if (isRecording) {
-      interval = window.setInterval(runAnalysis, 12000); 
-    }
+    if (isRecording) interval = window.setInterval(runAnalysis, 12000);
     return () => clearInterval(interval);
-  }, [isRecording, scoreA, scoreB]);
+  }, [isRecording, scoreA, scoreB, showGameCelebration]);
 
-  const toggleRecording = () => {
-    const nextState = !isRecording;
-    setIsRecording(nextState);
-    if (nextState) {
-      setLogs([]);
-      setScoreA(0);
-      setScoreB(0);
-      announceScore("none", "0-0");
-    }
-  };
+  useEffect(() => {
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (err) { setError("Camera access denied."); }
+    })();
+  }, []);
 
   return (
-    <div className="flex flex-col gap-6 pb-24 animate-in fade-in duration-500">
+    <div className="flex flex-col gap-6 pb-24 relative min-h-[80vh]">
+      {showGameCelebration && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-xl flex flex-col items-center justify-center p-8 animate-in zoom-in duration-500 text-center">
+           <div className="w-24 h-24 bg-lime-400 rounded-full flex items-center justify-center shadow-2xl shadow-lime-500/30 mb-8">
+              <Trophy className="w-12 h-12 text-slate-950" />
+           </div>
+           <h2 className="text-4xl font-black text-white mb-2">GAME WON!</h2>
+           <p className="text-lime-400 text-2xl font-black mb-12">{gameWinnerName.toUpperCase()}</p>
+           
+           <div className="bg-slate-900 border border-white/5 p-8 rounded-[3rem] w-full max-w-xs mb-12">
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">Set Progression</p>
+              <div className="flex items-center justify-center gap-8">
+                 <div className="text-center">
+                    <p className="text-[10px] text-slate-600 font-bold uppercase mb-1 truncate max-w-[80px]">{teamAName}</p>
+                    <p className="text-5xl font-black text-white">{gamesA}</p>
+                 </div>
+                 <div className="h-10 w-px bg-white/10" />
+                 <div className="text-center">
+                    <p className="text-[10px] text-slate-600 font-bold uppercase mb-1 truncate max-w-[80px]">{teamBName}</p>
+                    <p className="text-5xl font-black text-white">{gamesB}</p>
+                 </div>
+              </div>
+           </div>
+
+           <button 
+             onClick={() => setShowGameCelebration(false)}
+             className="w-full max-w-xs bg-white text-slate-950 font-black py-6 rounded-[2rem] flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
+           >
+             NEXT GAME <ChevronRight className="w-6 h-6" />
+           </button>
+        </div>
+      )}
+
       <div className="relative aspect-video bg-black rounded-[2.5rem] overflow-hidden shadow-2xl ring-1 ring-white/10">
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          className="w-full h-full object-cover opacity-90"
-        />
+        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-80" />
         <canvas ref={canvasRef} className="hidden" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30 pointer-events-none" />
         
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
-        
-        {/* Top Controls Overlay */}
         <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-          {isRecording && (
-            <div className="flex items-center gap-2 bg-red-600/90 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest animate-pulse shadow-lg ring-1 ring-white/20">
-              <Activity className="w-3 h-3" /> LIVE TRACKING
-            </div>
-          )}
-          {isAnalyzing && (
-            <div className="flex items-center gap-2 bg-lime-400/90 backdrop-blur-md text-slate-950 px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-lg">
-              <RefreshCcw className="w-3 h-3 animate-spin" /> ANALYZING FRAME
-            </div>
-          )}
+          {isRecording && <div className="bg-red-600 text-white px-3 py-1 rounded-full text-[8px] font-black tracking-widest animate-pulse">LIVE TRACKING</div>}
+          {isAnalyzing && <div className="bg-lime-400 text-slate-950 px-3 py-1 rounded-full text-[8px] font-black tracking-widest">AI SYNCING...</div>}
         </div>
 
-        {/* HUD Scoreboard */}
-        <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2.5 flex items-center gap-4 shadow-2xl min-w-[180px]">
-          <div className="flex flex-col items-center flex-1 min-w-0">
-             <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter truncate w-full text-center">{teamAName}</span>
-             <span className="text-2xl font-black text-white tabular-nums leading-none mt-1">{PADEL_SCORES[scoreA]}</span>
-          </div>
-          <div className="w-px h-8 bg-white/10" />
-          <div className="flex flex-col items-center flex-1 min-w-0">
-             {!tournamentMatch ? (
-               <input 
-                 type="text" 
-                 value={customOpponent} 
-                 onChange={(e) => setCustomOpponent(e.target.value)}
-                 className="text-[8px] font-black text-slate-500 uppercase tracking-tighter truncate w-full text-center bg-transparent border-none outline-none focus:text-lime-400"
-               />
-             ) : (
-               <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter truncate w-full text-center">{teamBName}</span>
-             )}
-             <span className="text-2xl font-black text-white tabular-nums leading-none mt-1">{PADEL_SCORES[scoreB]}</span>
-          </div>
+        <div className="absolute inset-x-0 top-6 flex justify-center">
+           <div className="bg-slate-950/80 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/10 flex gap-6 items-center shadow-2xl">
+              <div className="text-center">
+                <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-0.5 truncate max-w-[60px]">{teamAName}</p>
+                <div className="flex items-center gap-2">
+                   <span className="text-2xl font-black text-white tabular-nums">{gamesA}</span>
+                   <span className="text-[10px] text-lime-400 font-black px-1.5 py-0.5 bg-lime-400/10 rounded-lg">{PADEL_SCORES[scoreA]}</span>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-white/10" />
+              <div className="text-center">
+                <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-0.5 truncate max-w-[60px]">{teamBName}</p>
+                <div className="flex items-center gap-2">
+                   <span className="text-[10px] text-lime-400 font-black px-1.5 py-0.5 bg-lime-400/10 rounded-lg">{PADEL_SCORES[scoreB]}</span>
+                   <span className="text-2xl font-black text-white tabular-nums">{gamesB}</span>
+                </div>
+              </div>
+           </div>
         </div>
-
-        {error && (
-          <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center z-20">
-            <ShieldAlert className="w-16 h-16 text-red-500 mb-6" />
-            <h3 className="text-xl font-bold text-white mb-2 uppercase">Camera Required</h3>
-            <p className="text-slate-400 max-w-xs mb-8 text-sm">Mount your phone at the back of the court for optimal AI point tracking.</p>
-            <button onClick={startCamera} className="bg-white text-slate-950 px-10 py-4 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 transition-all shadow-xl">Enable Permissions</button>
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-5 items-center shadow-xl">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 truncate w-full text-center px-2">{teamAName}</span>
-          <div className="flex flex-col items-center gap-2 w-full">
-            <button onClick={() => manualAdjust('A', 1)} className="w-full aspect-square flex items-center justify-center bg-lime-400 text-slate-950 rounded-3xl shadow-lg active:scale-95 transition-transform">
-              <Plus className="w-10 h-10 stroke-[3]" />
-            </button>
-            <div className="py-4"><span className="text-6xl font-black text-white tabular-nums">{PADEL_SCORES[scoreA]}</span></div>
-            <button onClick={() => manualAdjust('A', -1)} className="w-full py-4 flex items-center justify-center bg-slate-800 text-slate-500 rounded-3xl active:scale-95 transition-transform">
-              <Minus className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="bg-slate-900/50 border border-white/5 rounded-[3rem] p-6 text-center space-y-4">
+           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest block truncate">{teamAName}</span>
+           <div className="text-6xl font-black text-white tabular-nums py-2">{PADEL_SCORES[scoreA]}</div>
+           <button 
+             onClick={() => handlePoint('A')}
+             className="w-full py-6 bg-lime-400 text-slate-950 font-black rounded-3xl flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+           >
+             <Plus className="w-5 h-5" /> WIN POINT
+           </button>
         </div>
 
-        <div className="flex flex-col bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-5 items-center shadow-xl">
-          <div className="flex items-center gap-1 mb-4 w-full justify-center px-2">
-            {!tournamentMatch ? (
-               <div className="flex items-center gap-2 group">
-                 <input 
-                   type="text" 
-                   value={customOpponent} 
-                   onChange={(e) => setCustomOpponent(e.target.value)}
-                   className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] bg-transparent border-none outline-none focus:text-white transition-colors text-center max-w-[80px]"
-                 />
-                 <Edit3 className="w-3 h-3 text-slate-700 group-hover:text-slate-500" />
-               </div>
-            ) : (
-               <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] truncate text-center">{teamBName}</span>
-            )}
-          </div>
-          <div className="flex flex-col items-center gap-2 w-full">
-            <button onClick={() => manualAdjust('B', 1)} className="w-full aspect-square flex items-center justify-center bg-lime-400 text-slate-950 rounded-3xl shadow-lg active:scale-95 transition-transform">
-              <Plus className="w-10 h-10 stroke-[3]" />
-            </button>
-            <div className="py-4"><span className="text-6xl font-black text-white tabular-nums">{PADEL_SCORES[scoreB]}</span></div>
-            <button onClick={() => manualAdjust('B', -1)} className="w-full py-4 flex items-center justify-center bg-slate-800 text-slate-500 rounded-3xl active:scale-95 transition-transform">
-              <Minus className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="bg-slate-900/50 border border-white/5 rounded-[3rem] p-6 text-center space-y-4">
+           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest block truncate">{teamBName}</span>
+           <div className="text-6xl font-black text-white tabular-nums py-2">{PADEL_SCORES[scoreB]}</div>
+           <button 
+             onClick={() => handlePoint('B')}
+             className="w-full py-6 bg-white text-slate-950 font-black rounded-3xl flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+           >
+             <Plus className="w-5 h-5" /> WIN POINT
+           </button>
         </div>
       </div>
 
       <div className="flex gap-4">
         <button
-          onClick={toggleRecording}
-          className={`flex-1 py-6 rounded-[2rem] font-black flex items-center justify-center gap-3 shadow-2xl transition-all active:scale-95 ${
-            isRecording ? 'bg-red-500/10 border border-red-500/30 text-red-500' : 'bg-white text-slate-950 hover:bg-slate-200'
-          }`}
+          onClick={() => setIsRecording(!isRecording)}
+          className={`flex-1 py-6 rounded-[2rem] font-black flex items-center justify-center gap-3 transition-all ${isRecording ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-slate-800 text-white border border-white/5'}`}
         >
           {isRecording ? <StopCircle className="w-6 h-6" /> : <Camera className="w-6 h-6" />}
           {isRecording ? 'STOP AI' : 'START AI'}
         </button>
-        
         <button 
-          onClick={handleSaveAndExit}
-          className="flex-1 py-6 rounded-[2rem] bg-lime-400 text-slate-950 font-black flex items-center justify-center gap-3 shadow-xl hover:bg-lime-300 transition-all active:scale-95"
+          onClick={() => onFinish(`${gamesA}-${gamesB}`, gamesA > gamesB)}
+          className="flex-1 py-6 bg-lime-400 text-slate-950 font-black rounded-[2rem] flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
         >
-          <Save className="w-6 h-6" /> SAVE & FINISH
+          <Save className="w-6 h-6" /> FINISH MATCH
         </button>
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between px-4">
-          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-            <Activity className="w-4 h-4 text-lime-400" /> AI Game Log
-          </h3>
-          <span className="text-[10px] text-slate-700 font-bold uppercase tracking-tighter">Live Timeline</span>
-        </div>
-        <div className="grid gap-3">
-          {logs.length === 0 ? (
-            <div className="text-center py-16 text-slate-700 bg-slate-900/10 border-2 border-dashed border-slate-900 rounded-[3rem]">
-              <p className="font-bold text-sm italic opacity-50">Match events will appear here as the AI detects points</p>
-            </div>
-          ) : (
-            logs.map((log, i) => (
-              <div key={log.timestamp + i} className={`group flex items-center gap-4 p-4 rounded-3xl border transition-all ${log.isHighlight ? 'bg-lime-500/10 border-lime-500/30 shadow-lg scale-[1.02]' : 'bg-slate-900/40 border-white/5'}`}>
-                {log.frame ? (
-                  <div className="w-20 h-14 rounded-xl bg-slate-800 overflow-hidden flex-shrink-0 shadow-inner ring-1 ring-white/10 relative">
-                    <img src={log.frame} className="w-full h-full object-cover" />
-                    {log.isHighlight && <div className="absolute top-1 right-1 bg-yellow-400 w-2 h-2 rounded-full shadow-lg" />}
+         <div className="flex items-center justify-between px-2">
+            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Live Point Timeline</h3>
+            <Activity className="w-4 h-4 text-lime-400 animate-pulse" />
+         </div>
+         <div className="grid gap-3">
+            {logs.length === 0 ? (
+               <div className="text-center py-12 text-slate-700 bg-slate-900/10 border-2 border-dashed border-slate-800 rounded-[2.5rem]">
+                  <p className="font-bold text-xs italic">Awaiting first point detection...</p>
+               </div>
+            ) : (
+               logs.map((log, i) => (
+                  <div key={i} className={`flex items-center gap-4 p-4 rounded-3xl border ${log.isHighlight ? 'bg-lime-500/5 border-lime-500/20' : 'bg-slate-900/40 border-white/5'}`}>
+                     {log.frame && <img src={log.frame} className="w-16 h-12 rounded-xl object-cover ring-1 ring-white/5" />}
+                     <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                           <span className="text-[10px] font-black text-lime-400 bg-lime-400/10 px-2 py-0.5 rounded-lg">{log.score}</span>
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 font-medium truncate">{log.description}</p>
+                     </div>
                   </div>
-                ) : (
-                  <div className="w-20 h-14 rounded-xl bg-slate-800 flex items-center justify-center flex-shrink-0 border border-white/5"><Activity className="w-4 h-4 text-slate-700" /></div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lime-400 font-black text-xs tabular-nums tracking-tighter bg-slate-950 px-2 py-0.5 rounded-lg ring-1 ring-white/5">{log.score}</span>
-                    <span className="text-[9px] font-black text-slate-600 uppercase">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 font-bold leading-tight line-clamp-2">{log.description}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+               ))
+            )}
+         </div>
       </div>
     </div>
   );

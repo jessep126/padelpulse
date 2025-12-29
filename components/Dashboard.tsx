@@ -1,22 +1,24 @@
 
 import React from 'react';
-import { AppView, UserStats } from '../types';
-import { Trophy, Users, Zap, Calendar, Play, User as UserIcon } from 'lucide-react';
+import { AppView, UserStats, League } from '../types';
+import { Trophy, Users, Zap, Calendar, Play, User as UserIcon, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface DashboardProps {
   onAction: (view: AppView) => void;
   userStats: UserStats;
   userName: string;
+  leagues: League[];
+  onSelectLeague: (id: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onAction, userStats, userName }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onAction, userStats, userName, leagues, onSelectLeague }) => {
   const winRate = userStats.matches > 0 
     ? Math.round((userStats.wins / userStats.matches) * 100) 
     : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center border border-white/5">
@@ -29,10 +31,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onAction, userStats, userName }) 
         </div>
       </div>
 
-      <section className="bg-gradient-to-br from-lime-500/20 to-emerald-500/5 border border-lime-500/20 rounded-[2.5rem] p-8 relative overflow-hidden">
+      <section className="bg-gradient-to-br from-lime-500/20 to-emerald-500/5 border border-lime-500/20 rounded-[2.5rem] p-8 relative overflow-hidden shadow-2xl">
         <div className="relative z-10">
-          <h2 className="text-3xl font-black mb-2 text-white uppercase tracking-tight">Match Ready?</h2>
-          <p className="text-slate-400 text-sm mb-6 max-w-[240px]">Start tracking your performance and climbing the local ranks.</p>
+          <h2 className="text-3xl font-black mb-2 text-white uppercase tracking-tight">Quick Play</h2>
+          <p className="text-slate-400 text-sm mb-6 max-w-[240px]">Start an AI-tracked session with point-by-point live analysis.</p>
           <div className="flex flex-col gap-3">
             <button 
               onClick={() => onAction(AppView.MATCH_MODE_SELECT)}
@@ -41,14 +43,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onAction, userStats, userName }) 
               <div className="w-8 h-8 bg-slate-950 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
                 <Play className="w-4 h-4 text-lime-400 fill-current ml-0.5" />
               </div>
-              <span className="text-lg tracking-tight">QUICK MATCH</span>
-            </button>
-            <button 
-              onClick={() => onAction(AppView.CREATE_TOURNAMENT)}
-              className="bg-white/5 backdrop-blur-md text-white border border-white/10 font-black px-8 py-4 rounded-2xl hover:bg-white/10 transition-all flex items-center justify-center gap-3"
-            >
-              <Trophy className="w-5 h-5 text-yellow-400" />
-              Tournament Maker
+              <span className="text-lg tracking-tight">START MATCH</span>
             </button>
           </div>
         </div>
@@ -70,30 +65,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onAction, userStats, userName }) 
         ))}
       </div>
 
-      <section className="bg-slate-900/50 border border-white/5 p-6 rounded-[2.5rem]">
-        <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-8">Performance History</h3>
-        <div className="h-48 w-full flex items-center justify-center">
-          {userStats.matches === 0 ? (
-            <p className="text-slate-600 text-sm font-bold italic">Play a match to see your trends</p>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={[
-                { name: 'Start', win: 0 },
-                { name: 'Now', win: userStats.wins }
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px' }}
-                  itemStyle={{ color: '#fff', fontSize: '12px' }}
-                />
-                <Line type="monotone" dataKey="win" stroke="#a3e635" strokeWidth={4} dot={{ fill: '#a3e635', strokeWidth: 2, r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Your Leagues</h3>
+          <button 
+            onClick={() => onAction(AppView.CREATE_LEAGUE)}
+            className="text-lime-400 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-lime-400/10 px-3 py-1.5 rounded-full"
+          >
+            <Plus className="w-3 h-3" /> New League
+          </button>
         </div>
-      </section>
+        {leagues.length === 0 ? (
+          <div className="bg-slate-900/30 border border-dashed border-white/10 p-8 rounded-[2rem] text-center">
+            <p className="text-slate-500 text-xs font-bold italic">No leagues joined. Create one to play with friends!</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {leagues.map((league) => (
+              <button 
+                key={league.id}
+                onClick={() => onSelectLeague(league.id)}
+                className="bg-slate-900/50 border border-white/5 p-5 rounded-[2rem] flex items-center justify-between group hover:border-lime-400/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform">
+                    <Trophy className="w-6 h-6" />
+                  </div>
+                  <div className="text-left">
+                    <h4 className="text-white font-black group-hover:text-lime-400 transition-colors">{league.name}</h4>
+                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">{league.members.length} Members • {league.matches.length} Matches</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-950 rounded-xl text-slate-500">
+                  <Play className="w-4 h-4 fill-current" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -4,14 +4,14 @@ import { ChevronLeft, Save, Plus, Minus, Trophy, Edit2 } from 'lucide-react';
 
 interface ManualScoreViewProps {
   homeName: string;
+  opponentName: string;
   onBack: () => void;
   onSave: (score: string, teamAWon: boolean) => void;
 }
 
-const ManualScoreView: React.FC<ManualScoreViewProps> = ({ homeName, onBack, onSave }) => {
+const ManualScoreView: React.FC<ManualScoreViewProps> = ({ homeName, opponentName, onBack, onSave }) => {
   const [setsA, setSetsA] = useState([0, 0, 0]);
   const [setsB, setSetsB] = useState([0, 0, 0]);
-  const [opponentName, setOpponentName] = useState('Opponent');
 
   const adjustScore = (team: 'A' | 'B', index: number, delta: number) => {
     if (team === 'A') {
@@ -28,7 +28,6 @@ const ManualScoreView: React.FC<ManualScoreViewProps> = ({ homeName, onBack, onS
   const handleSave = () => {
     const scoreStr = setsA.map((s, i) => `${s}-${setsB[i]}`).filter(s => s !== '0-0').join(', ');
     
-    // Simple logic: team with more sets won wins
     let winsA = 0;
     let winsB = 0;
     setsA.forEach((s, i) => {
@@ -68,15 +67,8 @@ const ManualScoreView: React.FC<ManualScoreViewProps> = ({ homeName, onBack, onS
 
           <div className="text-center flex-1 min-w-0">
             <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] block mb-2">AWAY</span>
-            <div className="relative group">
-              <input 
-                type="text"
-                value={opponentName}
-                onChange={(e) => setOpponentName(e.target.value)}
-                placeholder="Opponent Name"
-                className="w-full bg-slate-950/50 border border-white/5 focus:border-blue-500 rounded-2xl p-4 text-sm font-black text-white text-center outline-none transition-all placeholder:text-slate-800"
-              />
-              <Edit2 className="w-3 h-3 text-slate-700 absolute right-3 bottom-3 group-focus-within:hidden" />
+            <div className="bg-slate-950/50 p-4 rounded-2xl border border-white/5">
+               <span className="text-sm font-black text-white truncate block">{opponentName}</span>
             </div>
           </div>
         </div>
@@ -109,14 +101,14 @@ const ManualScoreView: React.FC<ManualScoreViewProps> = ({ homeName, onBack, onS
           onClick={handleSave}
           className="w-full bg-white text-slate-950 font-black py-6 rounded-[2rem] flex items-center justify-center gap-3 hover:bg-lime-400 hover:scale-[1.02] transition-all shadow-2xl active:scale-95"
         >
-          <Save className="w-6 h-6" /> COMPLETE MATCH
+          <Save className="w-6 h-6" /> SUBMIT RESULT
         </button>
       </div>
 
       <div className="flex items-center justify-center gap-4 bg-slate-900/30 p-4 rounded-3xl border border-white/5">
         <Trophy className="w-5 h-5 text-yellow-500" />
         <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider">
-          Matches update your personal rank and win/loss ratio.
+          Results must be confirmed by your opponent to count.
         </p>
       </div>
     </div>
