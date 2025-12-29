@@ -1,0 +1,9 @@
+{
+  "name": "PadelPulse AI",
+  "description": "Smart Padel companion for match recording, AI point tracking, highlight generation, and local court/tournament discovery.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
