@@ -12,7 +12,11 @@ export interface UserStats {
   losses: number;
   matches: number;
   points: number;
+  smashWinRate: number; // Padel Specific
+  netPointsWon: number; // Padel Specific
 }
+
+export type CourtEnd = 'Side A' | 'Side B';
 
 export interface UserProfile {
   id: string;
@@ -20,19 +24,23 @@ export interface UserProfile {
   email: string;
   avatar: string;
   level: string;
+  verified: boolean;
+  preferredPala?: string;
+  playingSide?: 'Left' | 'Right' | 'Both';
 }
 
 export type MatchStatus = 'pending' | 'confirmed' | 'disputed';
 
 export interface AppNotification {
   id: string;
-  type: 'league_invite' | 'match_confirmation';
+  type: 'league_invite' | 'match_confirmation' | 'challenge' | 'system';
   fromName: string;
+  message?: string;
   leagueId?: string;
   leagueName?: string;
   matchId?: string;
   timestamp: number;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'declined' | 'read';
 }
 
 export interface LeagueMember {
@@ -48,19 +56,20 @@ export interface LeagueMember {
 export interface LeagueMatch {
   id: string;
   date: string;
-  playerA: string; // ID
-  playerB: string; // ID
+  playerA: string;
+  playerB: string;
   playerAName: string;
   playerBName: string;
   score: string;
   winnerId: string;
   status: MatchStatus;
-  confirmedBy: string[]; // List of User IDs
+  confirmedBy: string[];
 }
 
 export interface League {
   id: string;
   name: string;
+  type: 'league' | 'tournament';
   adminId: string;
   members: LeagueMember[];
   matches: LeagueMatch[];
@@ -75,6 +84,7 @@ export enum AppView {
   MATCH_MODE_SELECT = 'match_mode_select',
   MANUAL_SCORE = 'manual_score',
   ONBOARDING = 'onboarding',
+  VERIFICATION = 'verification',
   PROFILE = 'profile',
   LEAGUE_DASHBOARD = 'league_dashboard',
   CREATE_LEAGUE = 'create_league',

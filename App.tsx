@@ -14,21 +14,24 @@ import LeagueDashboardView from './components/LeagueDashboardView';
 import CreateLeagueView from './components/CreateLeagueView';
 import NotificationCenter from './components/NotificationCenter';
 import PlayerSelectorView from './components/PlayerSelectorView';
+import EmailSimulator, { EmailMessage } from './components/EmailSimulator';
+import { padelAI } from './services/geminiService';
 
 const MOCK_GLOBAL_USERS: UserProfile[] = [
-  { id: 'u1', name: 'Ale Galán', email: 'ale@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ale', level: 'Pro' },
-  { id: 'u2', name: 'Paula Josemaría', email: 'paula@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Paula', level: 'Pro' },
-  { id: 'u3', name: 'Juan Lebrón', email: 'juan@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Juan', level: 'Pro' },
-  { id: 'u4', name: 'Marta Ortega', email: 'marta@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Marta', level: 'Advanced' }
+  { id: 'u1', name: 'Ale Galán', email: 'ale@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ale', level: 'Pro', verified: true },
+  { id: 'u2', name: 'Paula Josemaría', email: 'paula@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Paula', level: 'Pro', verified: true },
+  { id: 'u3', name: 'Juan Lebrón', email: 'juan@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Juan', level: 'Pro', verified: true },
+  { id: 'u4', name: 'Marta Ortega', email: 'marta@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Marta', level: 'Advanced', verified: true }
 ];
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>(AppView.DASHBOARD);
   const [pendingMatchMode, setPendingMatchMode] = useState<AppView | null>(null);
   const [selectedOpponent, setSelectedOpponent] = useState<UserProfile | null>(null);
+  const [emails, setEmails] = useState<EmailMessage[]>([]);
   
   const [userName, setUserName] = useState<string | null>(localStorage.getItem('padel_user_name'));
-  const [userId] = useState(() => {
+  const [userId, setUserId] = useState(() => {
     let id = localStorage.getItem('padel_user_id');
     if (!id) {
       id = Math.random().toString(36).substr(2, 9);
@@ -39,7 +42,7 @@ const App: React.FC = () => {
 
   const [userStats, setUserStats] = useState<UserStats>(() => {
     const saved = localStorage.getItem('padel_user_stats');
-    return saved ? JSON.parse(saved) : { wins: 0, losses: 0, matches: 0, points: 0 };
+    return saved ? JSON.parse(saved) : { wins: 0, losses: 0, matches: 0, points: 0, smashWinRate: 74, netPointsWon: 124 };
   });
   
   const [leagues, setLeagues] = useState<League[]>(() => {
@@ -81,24 +84,41 @@ const App: React.FC = () => {
     localStorage.setItem('padel_global_users', JSON.stringify(allUsers));
   }, [allUsers]);
 
-  const handleCompleteOnboarding = (data: { name: string, email: string, level: string }) => {
+  const sendSimulatedEmail = (subject: string, body: string) => {
+    const newEmail: EmailMessage = {
+      id: Math.random().toString(36).substr(2, 9),
+      subject,
+      body,
+      timestamp: Date.now()
+    };
+    setEmails(prev => [newEmail, ...prev]);
+  };
+
+  const handleCompleteOnboarding = (data: { name: string, email: string, level: string, existingId?: string }) => {
+    const finalId = data.existingId || Math.random().toString(36).substr(2, 9);
+    
     const newProfile: UserProfile = {
-      id: userId,
+      id: finalId,
       name: data.name,
       email: data.email,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
-      level: data.level
+      level: data.level,
+      verified: true
     };
     
     setUserName(data.name);
+    setUserId(finalId);
+    
     setAllUsers(prev => {
-      const filtered = prev.filter(u => u.id !== userId);
+      const filtered = prev.filter(u => u.id !== finalId);
       return [...filtered, newProfile];
     });
     
     localStorage.setItem('padel_user_name', data.name);
+    localStorage.setItem('padel_user_id', finalId);
     localStorage.setItem('padel_user_email', data.email);
     localStorage.setItem('padel_user_level', data.level);
+    
     setActiveView(AppView.DASHBOARD);
   };
 
@@ -110,7 +130,7 @@ const App: React.FC = () => {
     setActiveView(AppView.ONBOARDING);
   };
 
-  const handleMatchFinish = (score: string, teamAWon: boolean) => {
+  const handleMatchFinish = async (score: string, teamAWon: boolean) => {
     if (!selectedOpponent) return;
 
     const matchId = Math.random().toString(36).substr(2, 9);
@@ -127,8 +147,6 @@ const App: React.FC = () => {
       confirmedBy: [userId]
     };
 
-    // Store in global matches list (simulated by updating all leagues if it were a league match, 
-    // but for now let's just create a notification for the other user)
     const notif: AppNotification = {
       id: Math.random().toString(36).substr(2, 9),
       type: 'match_confirmation',
@@ -138,21 +156,39 @@ const App: React.FC = () => {
       status: 'pending'
     };
 
-    // Simulated "Global Match Store" for confirmation
     const matchStoreKey = `padel_match_data_${matchId}`;
     localStorage.setItem(matchStoreKey, JSON.stringify(newMatch));
 
-    // Send notification to opponent
     const targetNotifsKey = `padel_notifs_${selectedOpponent.id}`;
     const existingTargetNotifs = JSON.parse(localStorage.getItem(targetNotifsKey) || '[]');
     localStorage.setItem(targetNotifsKey, JSON.stringify([notif, ...existingTargetNotifs]));
 
-    // If we invited ourselves (testing), add to our own list
     if (selectedOpponent.id === userId) {
       setNotifications(prev => [notif, ...prev]);
     }
 
-    alert(`Match finished! Waiting for ${selectedOpponent.name} to confirm the score.`);
+    const emailData = await padelAI.composeEmail('invite', { 
+      name: selectedOpponent.name, 
+      sender: userName,
+      leagueName: 'Match Confirmation'
+    });
+    
+    sendSimulatedEmail(emailData.subject, `[SENT TO ${selectedOpponent.email}]\n\n${emailData.body}`);
+
+    if (navigator.share) {
+      if (confirm(`Match finished! Internal notification sent. Would you like to nudge ${selectedOpponent.name} on WhatsApp or other platforms to confirm the result?`)) {
+        try {
+          await navigator.share({
+            title: 'Padel Match Result Confirmation',
+            text: emailData.share_text,
+            url: window.location.origin + "/match/" + matchId
+          });
+        } catch (e) { console.error(e); }
+      }
+    } else {
+      alert(`Match finished! Result sent for confirmation. Opponent notified.`);
+    }
+
     setSelectedOpponent(null);
     setActiveView(AppView.DASHBOARD);
   };
@@ -169,7 +205,6 @@ const App: React.FC = () => {
 
     if (matchData.confirmedBy.length >= 2) {
       matchData.status = 'confirmed';
-      // Finally update stats now that it is confirmed
       const isWin = matchData.winnerId === userId;
       updateStats(isWin);
     }
@@ -181,6 +216,7 @@ const App: React.FC = () => {
 
   const updateStats = (isWin: boolean, pointsEarned: number = 25) => {
     setUserStats(prev => ({
+      ...prev,
       matches: prev.matches + 1,
       wins: isWin ? prev.wins + 1 : prev.wins,
       losses: isWin ? prev.losses : prev.losses + 1,
@@ -190,7 +226,7 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (activeView === AppView.ONBOARDING) {
-      return <OnboardingView onComplete={handleCompleteOnboarding} />;
+      return <OnboardingView existingUsers={allUsers} onComplete={handleCompleteOnboarding} onSendEmail={sendSimulatedEmail} />;
     }
 
     switch (activeView) {
@@ -222,7 +258,6 @@ const App: React.FC = () => {
             notifications={notifications} 
             onAccept={(notif) => {
               if (notif.type === 'league_invite') {
-                // Handle league acceptance logic
                 setNotifications(prev => prev.filter(n => n.id !== notif.id));
                 setLeagues(prevLeagues => prevLeagues.map(l => {
                   if (l.id === notif.leagueId) {
@@ -249,9 +284,12 @@ const App: React.FC = () => {
             league={league} 
             userId={userId} 
             allPlatformUsers={allUsers}
-            onSendInvite={(targetId) => {
+            onSendInvite={async (targetId) => {
               const league = leagues.find(l => l.id === activeLeagueId);
               if (!league) return;
+              const target = allUsers.find(u => u.id === targetId);
+              if (!target) return;
+
               const newNotif: AppNotification = {
                 id: Math.random().toString(36).substr(2, 9),
                 type: 'league_invite',
@@ -261,21 +299,42 @@ const App: React.FC = () => {
                 timestamp: Date.now(),
                 status: 'pending'
               };
+              
               const targetNotifsKey = `padel_notifs_${targetId}`;
               const existingTargetNotifs = JSON.parse(localStorage.getItem(targetNotifsKey) || '[]');
               localStorage.setItem(targetNotifsKey, JSON.stringify([newNotif, ...existingTargetNotifs]));
               if (targetId === userId) setNotifications(prev => [newNotif, ...prev]);
-              alert(`Invite sent!`);
+
+              const emailData = await padelAI.composeEmail('invite', { 
+                name: target.name, 
+                sender: userName,
+                leagueName: league.name
+              });
+              
+              sendSimulatedEmail(emailData.subject, `[SENT TO ${target.email}]\n\n${emailData.body}`);
+              
+              if (navigator.share && confirm(`Invite sent to internal platform. Nudge ${target.name} on other apps?`)) {
+                try {
+                  await navigator.share({
+                    title: 'Padel League Invitation',
+                    text: emailData.share_text,
+                    url: window.location.href
+                  });
+                } catch (e) { console.error(e); }
+              } else {
+                alert(`Invite sent!`);
+              }
             }}
             onUpdateLeague={(updated) => setLeagues(leagues.map(l => l.id === updated.id ? updated : l))}
             onBack={() => setActiveView(AppView.DASHBOARD)}
           />
         ) : null;
       case AppView.CREATE_LEAGUE:
-        return <CreateLeagueView onSubmit={(name) => {
+        return <CreateLeagueView onSubmit={(name, type) => {
           const newLeague: League = {
             id: Math.random().toString(36).substr(2, 9),
             name,
+            type,
             adminId: userId,
             members: [{ id: userId, name: userName || 'Me', role: 'admin', wins: 0, matches: 0, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userName}` }],
             matches: []
@@ -293,7 +352,16 @@ const App: React.FC = () => {
             onFinish={handleMatchFinish}
           />
         );
-      case AppView.DISCOVERY: return <DiscoveryView />;
+      case AppView.DISCOVERY: 
+        return (
+          <DiscoveryView 
+            allUsers={allUsers.filter(u => u.id !== userId)} 
+            onChallenge={(opponent) => {
+              setSelectedOpponent(opponent);
+              setActiveView(AppView.MATCH_MODE_SELECT);
+            }} 
+          />
+        );
       case AppView.HIGHLIGHTS: return <HighlightsGallery />;
       case AppView.CREATE_TOURNAMENT: return <CreateTournamentView matches={tournamentMatches} setMatches={setTournamentMatches} onStartRecording={(m) => { setActiveTournamentMatch(m); setActiveView(AppView.RECORD); }} />;
       case AppView.MATCH_MODE_SELECT: return <MatchModeSelect onSelect={(view) => {
@@ -306,9 +374,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeView={activeView} setView={setActiveView} hasNotifications={notifications.length > 0} onLogout={handleLogout}>
-      {renderView()}
-    </Layout>
+    <>
+      <EmailSimulator emails={emails} onClose={(id) => setEmails(prev => prev.filter(e => e.id !== id))} />
+      <Layout activeView={activeView} setView={setActiveView} hasNotifications={notifications.length > 0} onLogout={handleLogout}>
+        {renderView()}
+      </Layout>
+    </>
   );
 };
 

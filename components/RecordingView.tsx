@@ -1,10 +1,10 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Camera, StopCircle, RefreshCcw, Activity, ShieldAlert, Plus, Minus, Volume2, Trophy, Save, Edit3, ChevronRight, Zap } from 'lucide-react';
+import { Camera, StopCircle, Activity, Trophy, Save, Zap, GripHorizontal, Settings2, Volume2, Plus } from 'lucide-react';
 import { padelAI } from '../services/geminiService';
-import { MatchPoint, TournamentMatch } from '../types';
+import { MatchPoint, TournamentMatch, CourtEnd } from '../types';
 
-// Helper for Audio Decoding
+// Audio decoding helpers for TTS playback
 function decodeBase64(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -15,16 +15,10 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
+async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
@@ -49,37 +43,37 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
   const audioCtxRef = useRef<AudioContext | null>(null);
   
   const [isRecording, setIsRecording] = useState(false);
+  const [courtEnd, setCourtEnd] = useState<CourtEnd>('Side A');
   const [scoreA, setScoreA] = useState(0); 
   const [scoreB, setScoreB] = useState(0); 
   const [gamesA, setGamesA] = useState(0);
   const [gamesB, setGamesB] = useState(0);
   const [logs, setLogs] = useState<MatchPoint[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showGameCelebration, setShowGameCelebration] = useState(false);
   const [gameWinnerName, setGameWinnerName] = useState('');
+  const [isMuted, setIsMuted] = useState(false);
 
   const teamAName = tournamentMatch ? tournamentMatch.sideA.join(' & ') : homeName;
   const teamBName = tournamentMatch ? tournamentMatch.sideB.join(' & ') : opponentName;
 
-  const getScoreString = useCallback((sA: number, sB: number) => {
-    return `${PADEL_SCORES[sA]}-${PADEL_SCORES[sB]}`;
+  // Initialize AudioContext for TTS
+  useEffect(() => {
+    audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    return () => {
+      audioCtxRef.current?.close();
+    };
   }, []);
 
-  const announceScore = async (winner: string, newScore: string, type: 'point' | 'game' = 'point') => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    }
-    const winName = winner === "Team A" ? teamAName : teamBName;
-    const text = type === 'game' 
-      ? `Game set! ${winName} wins the game. The set score is ${gamesA} to ${gamesB}.`
-      : winner !== "none" ? `Point to ${winName}. Score is ${newScore}.` : `Score is ${newScore}.`;
-    
+  const announceScore = async (customText?: string) => {
+    if (isMuted) return;
+    const text = customText || `Score is ${PADEL_SCORES[scoreA]} ${PADEL_SCORES[scoreB]}`;
     const base64Audio = await padelAI.generateSpeech(text);
     if (base64Audio && audioCtxRef.current) {
-      const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), audioCtxRef.current, 24000, 1);
+      const audioData = decodeBase64(base64Audio);
+      const buffer = await decodeAudioData(audioData, audioCtxRef.current, 24000, 1);
       const source = audioCtxRef.current.createBufferSource();
-      source.buffer = audioBuffer;
+      source.buffer = buffer;
       source.connect(audioCtxRef.current.destination);
       source.start();
     }
@@ -90,60 +84,47 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
     let nextB = scoreB;
 
     if (team === 'A') {
-      if (scoreA === 3 && scoreB < 3) nextA = 5; // 40-0, 40-15, 40-30 -> Game
-      else if (scoreA === 3 && scoreB === 3) nextA = 4; // Deuce -> Ad
-      else if (scoreA === 4) nextA = 5; // Ad -> Game
-      else if (scoreA === 3 && scoreB === 4) { nextA = 3; nextB = 3; } // Opponent Ad -> Deuce
-      else nextA = scoreA + 1;
+      if (scoreA < 3) {
+        nextA = scoreA + 1;
+      } else if (scoreA === 3) { // 40
+        if (scoreB < 3) nextA = 5; // 40-0/15/30 -> Game
+        else if (scoreB === 3) nextA = 4; // 40-40 -> Ad A
+        else if (scoreB === 4) nextB = 3; // Ad B -> Deuce
+      } else if (scoreA === 4) { // Ad A
+        nextA = 5; // Game
+      }
     } else {
-      if (scoreB === 3 && scoreA < 3) nextB = 5;
-      else if (scoreB === 3 && scoreA === 3) nextB = 4;
-      else if (scoreB === 4) nextB = 5;
-      // Fixed typo 'i' to 'scoreA' to correctly handle Team A Advantage losing to Team B point
-      else if (scoreB === 3 && scoreA === 4) { nextB = 3; nextA = 3; }
-      else if (scoreB === 3 && scoreA === 4) { nextB = 3; nextA = 3; }
-      else nextB = scoreB + 1;
+      if (scoreB < 3) {
+        nextB = scoreB + 1;
+      } else if (scoreB === 3) { // 40
+        if (scoreA < 3) nextB = 5; // 0/15/30-40 -> Game
+        else if (scoreA === 3) nextB = 4; // 40-40 -> Ad B
+        else if (scoreA === 4) nextA = 3; // Ad A -> Deuce
+      } else if (scoreB === 4) { // Ad B
+        nextB = 5; // Game
+      }
     }
 
+    // Check for Game win
     if (nextA === 5) {
-      const newGamesA = gamesA + 1;
-      setGamesA(newGamesA);
+      setGamesA(prev => prev + 1);
       setGameWinnerName(teamAName);
       setShowGameCelebration(true);
-      announceScore("Team A", "Game", "game");
-      setScoreA(0); setScoreB(0);
+      setScoreA(0);
+      setScoreB(0);
+      announceScore(`Game for ${teamAName}`);
     } else if (nextB === 5) {
-      const newGamesB = gamesB + 1;
-      setGamesB(newGamesB);
+      setGamesB(prev => prev + 1);
       setGameWinnerName(teamBName);
       setShowGameCelebration(true);
-      announceScore("Team B", "Game", "game");
-      setScoreA(0); setScoreB(0);
+      setScoreA(0);
+      setScoreB(0);
+      announceScore(`Game for ${teamBName}`);
     } else {
       setScoreA(nextA);
       setScoreB(nextB);
-      announceScore(team === 'A' ? "Team A" : "Team B", getScoreString(nextA, nextB));
+      announceScore(`${PADEL_SCORES[nextA]} ${PADEL_SCORES[nextB]}`);
     }
-  };
-
-  const runAnalysis = async () => {
-    if (!isRecording || showGameCelebration) return;
-    const frame = captureFrame();
-    if (!frame) return;
-    setIsAnalyzing(true);
-    try {
-      const result = await padelAI.analyzeMatchFrame(frame, getScoreString(scoreA, scoreB));
-      if (result && result.winner !== "none") {
-        handlePoint(result.winner === "Team A" ? 'A' : 'B');
-        setLogs(prev => [{
-          timestamp: Date.now(),
-          score: getScoreString(scoreA, scoreB),
-          description: result.description,
-          isHighlight: result.isHighlight,
-          frame: `data:image/jpeg;base64,${frame}`
-        }, ...prev.slice(0, 19)]);
-      }
-    } catch (err) { console.error(err); } finally { setIsAnalyzing(false); }
   };
 
   const captureFrame = useCallback(() => {
@@ -156,80 +137,128 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
     return canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
   }, []);
 
-  useEffect(() => {
-    let interval: number;
-    if (isRecording) interval = window.setInterval(runAnalysis, 12000);
-    return () => clearInterval(interval);
-  }, [isRecording, scoreA, scoreB, showGameCelebration]);
+  const runAnalysis = async () => {
+    if (!isRecording || showGameCelebration || isAnalyzing) return;
+    const frame = captureFrame();
+    if (!frame) return;
+
+    setIsAnalyzing(true);
+    try {
+      const currentScoreString = `${PADEL_SCORES[scoreA]}-${PADEL_SCORES[scoreB]}`;
+      const result = await padelAI.analyzeMatchFrame(frame, currentScoreString, courtEnd);
+      
+      if (result && result.winner !== "none") {
+        const winningTeam = result.winner === "Team A" ? 'A' : 'B';
+        handlePoint(winningTeam);
+        
+        setLogs(prev => [{
+          timestamp: Date.now(),
+          score: `${PADEL_SCORES[scoreA]}-${PADEL_SCORES[scoreB]}`,
+          description: result.description,
+          isHighlight: result.isHighlight,
+          frame: `data:image/jpeg;base64,${frame}`
+        }, ...prev.slice(0, 15)]);
+      }
+    } catch (e) {
+      console.error("AI Analysis error:", e);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      } catch (err) { setError("Camera access denied."); }
-    })();
+    let interval: number;
+    if (isRecording) {
+      interval = window.setInterval(runAnalysis, 10000); // Analyze every 10s for point detection
+    }
+    return () => clearInterval(interval);
+  }, [isRecording, scoreA, scoreB, showGameCelebration, courtEnd, isAnalyzing]);
+
+  useEffect(() => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true })
+      .then(stream => { 
+        if (videoRef.current) videoRef.current.srcObject = stream; 
+      });
   }, []);
 
   return (
     <div className="flex flex-col gap-6 pb-24 relative min-h-[80vh]">
       {showGameCelebration && (
-        <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-xl flex flex-col items-center justify-center p-8 animate-in zoom-in duration-500 text-center">
-           <div className="w-24 h-24 bg-lime-400 rounded-full flex items-center justify-center shadow-2xl shadow-lime-500/30 mb-8">
-              <Trophy className="w-12 h-12 text-slate-950" />
-           </div>
-           <h2 className="text-4xl font-black text-white mb-2">GAME WON!</h2>
-           <p className="text-lime-400 text-2xl font-black mb-12">{gameWinnerName.toUpperCase()}</p>
-           
-           <div className="bg-slate-900 border border-white/5 p-8 rounded-[3rem] w-full max-w-xs mb-12">
-              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">Set Progression</p>
-              <div className="flex items-center justify-center gap-8">
-                 <div className="text-center">
-                    <p className="text-[10px] text-slate-600 font-bold uppercase mb-1 truncate max-w-[80px]">{teamAName}</p>
-                    <p className="text-5xl font-black text-white">{gamesA}</p>
-                 </div>
-                 <div className="h-10 w-px bg-white/10" />
-                 <div className="text-center">
-                    <p className="text-[10px] text-slate-600 font-bold uppercase mb-1 truncate max-w-[80px]">{teamBName}</p>
-                    <p className="text-5xl font-black text-white">{gamesB}</p>
-                 </div>
-              </div>
-           </div>
-
+        <div className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-10 animate-in zoom-in duration-500 text-center">
+           <Trophy className="w-20 h-20 text-lime-400 mb-6 animate-bounce" />
+           <h2 className="text-5xl font-black text-white italic uppercase tracking-tighter mb-2">Game Secured!</h2>
+           <p className="text-lime-400 text-2xl font-black mb-12 uppercase">{gameWinnerName}</p>
            <button 
-             onClick={() => setShowGameCelebration(false)}
-             className="w-full max-w-xs bg-white text-slate-950 font-black py-6 rounded-[2rem] flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
+             onClick={() => setShowGameCelebration(false)} 
+             className="w-full max-w-xs bg-lime-400 text-slate-950 font-black py-6 rounded-3xl shadow-2xl active:scale-95 transition-all text-xl"
            >
-             NEXT GAME <ChevronRight className="w-6 h-6" />
+             CONTINUE MATCH
            </button>
         </div>
       )}
 
-      <div className="relative aspect-video bg-black rounded-[2.5rem] overflow-hidden shadow-2xl ring-1 ring-white/10">
+      {/* Viewfinder with Padel Court Guide */}
+      <div className="relative aspect-video bg-black rounded-[3rem] overflow-hidden shadow-2xl ring-2 ring-white/5 group">
         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-80" />
         <canvas ref={canvasRef} className="hidden" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30 pointer-events-none" />
         
-        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-          {isRecording && <div className="bg-red-600 text-white px-3 py-1 rounded-full text-[8px] font-black tracking-widest animate-pulse">LIVE TRACKING</div>}
-          {isAnalyzing && <div className="bg-lime-400 text-slate-950 px-3 py-1 rounded-full text-[8px] font-black tracking-widest">AI SYNCING...</div>}
+        {/* Alignment Overlay */}
+        <div className="absolute inset-0 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
+           <div className="absolute inset-x-0 bottom-[15%] h-px bg-white" /> {/* Back service line */}
+           <div className="absolute inset-y-0 left-1/2 w-px bg-white" /> {/* Center line */}
+           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-black text-white uppercase tracking-widest bg-black/60 px-4 py-2 rounded-full border border-white/10">Align Service 'T' & Net</div>
         </div>
 
-        <div className="absolute inset-x-0 top-6 flex justify-center">
-           <div className="bg-slate-950/80 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/10 flex gap-6 items-center shadow-2xl">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/40 pointer-events-none" />
+        
+        <div className="absolute top-6 left-6 flex items-center gap-2">
+           <button 
+             onClick={() => setCourtEnd(prev => prev === 'Side A' ? 'Side B' : 'Side A')}
+             className="bg-slate-950/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 text-[10px] font-black text-white flex items-center gap-2 hover:bg-slate-900 transition-all shadow-lg"
+           >
+             <Settings2 className="w-3 h-3 text-lime-400" /> SIDE: {courtEnd}
+           </button>
+           <button 
+             onClick={() => setIsMuted(!isMuted)}
+             className={`p-2 rounded-2xl border transition-all ${isMuted ? 'bg-red-500/20 border-red-500/30 text-red-500' : 'bg-slate-950/80 border-white/10 text-white'}`}
+           >
+             <Volume2 className="w-4 h-4" />
+           </button>
+        </div>
+
+        <div className="absolute top-6 right-6 flex flex-col gap-2 items-end">
+          {isRecording && (
+            <div className="bg-red-600 text-white px-3 py-1.5 rounded-full text-[8px] font-black tracking-widest animate-pulse flex items-center gap-2 shadow-lg">
+              <Activity className="w-2.5 h-2.5" /> LIVE TRACKING
+            </div>
+          )}
+          {isAnalyzing && (
+            <div className="bg-lime-400 text-slate-950 px-3 py-1.5 rounded-full text-[8px] font-black tracking-widest shadow-lg flex items-center gap-2">
+              <Zap className="w-2.5 h-2.5 fill-current" /> ANALYZING SHOT...
+            </div>
+          )}
+        </div>
+
+        {/* Real-time Floating Scoreboard */}
+        <div className="absolute inset-x-0 bottom-8 flex justify-center scale-90 sm:scale-100">
+           <div className="bg-slate-950/90 backdrop-blur-2xl px-12 py-5 rounded-[2.5rem] border border-white/10 flex gap-12 items-center shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
               <div className="text-center">
-                <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-0.5 truncate max-w-[60px]">{teamAName}</p>
-                <div className="flex items-center gap-2">
-                   <span className="text-2xl font-black text-white tabular-nums">{gamesA}</span>
-                   <span className="text-[10px] text-lime-400 font-black px-1.5 py-0.5 bg-lime-400/10 rounded-lg">{PADEL_SCORES[scoreA]}</span>
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1 truncate max-w-[90px]">{teamAName}</p>
+                <div className="flex items-center gap-3">
+                   <span className="text-4xl font-black text-white italic">{gamesA}</span>
+                   <span className="text-[12px] text-lime-400 font-black px-2.5 py-1 bg-lime-400/10 rounded-xl border border-lime-400/20 tabular-nums">
+                     {PADEL_SCORES[scoreA]}
+                   </span>
                 </div>
               </div>
-              <div className="w-px h-8 bg-white/10" />
+              <div className="w-px h-10 bg-white/10" />
               <div className="text-center">
-                <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-0.5 truncate max-w-[60px]">{teamBName}</p>
-                <div className="flex items-center gap-2">
-                   <span className="text-[10px] text-lime-400 font-black px-1.5 py-0.5 bg-lime-400/10 rounded-lg">{PADEL_SCORES[scoreB]}</span>
-                   <span className="text-2xl font-black text-white tabular-nums">{gamesB}</span>
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1 truncate max-w-[90px]">{teamBName}</p>
+                <div className="flex items-center gap-3">
+                   <span className="text-[12px] text-lime-400 font-black px-2.5 py-1 bg-lime-400/10 rounded-xl border border-lime-400/20 tabular-nums">
+                     {PADEL_SCORES[scoreB]}
+                   </span>
+                   <span className="text-4xl font-black text-white italic">{gamesB}</span>
                 </div>
               </div>
            </div>
@@ -237,65 +266,75 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-slate-900/50 border border-white/5 rounded-[3rem] p-6 text-center space-y-4">
-           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest block truncate">{teamAName}</span>
-           <div className="text-6xl font-black text-white tabular-nums py-2">{PADEL_SCORES[scoreA]}</div>
-           <button 
-             onClick={() => handlePoint('A')}
-             className="w-full py-6 bg-lime-400 text-slate-950 font-black rounded-3xl flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-           >
-             <Plus className="w-5 h-5" /> WIN POINT
-           </button>
-        </div>
-
-        <div className="bg-slate-900/50 border border-white/5 rounded-[3rem] p-6 text-center space-y-4">
-           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest block truncate">{teamBName}</span>
-           <div className="text-6xl font-black text-white tabular-nums py-2">{PADEL_SCORES[scoreB]}</div>
-           <button 
-             onClick={() => handlePoint('B')}
-             className="w-full py-6 bg-white text-slate-950 font-black rounded-3xl flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-           >
-             <Plus className="w-5 h-5" /> WIN POINT
-           </button>
-        </div>
+        {[ 
+          { team: 'A', name: teamAName, score: scoreA }, 
+          { team: 'B', name: teamBName, score: scoreB } 
+        ].map((t) => (
+          <div key={t.team} className="bg-slate-900/40 border border-white/5 rounded-[3rem] p-6 text-center space-y-4 shadow-xl">
+             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block truncate px-4">{t.name}</span>
+             <div className="text-7xl font-black text-white italic tabular-nums py-2">{PADEL_SCORES[t.score]}</div>
+             <button 
+               onClick={() => handlePoint(t.team as 'A'|'B')} 
+               className="w-full py-6 bg-lime-400 text-slate-950 font-black rounded-3xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all hover:bg-lime-300"
+             >
+               <Plus className="w-5 h-5" /> WIN POINT
+             </button>
+          </div>
+        ))}
       </div>
 
       <div className="flex gap-4">
-        <button
-          onClick={() => setIsRecording(!isRecording)}
-          className={`flex-1 py-6 rounded-[2rem] font-black flex items-center justify-center gap-3 transition-all ${isRecording ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-slate-800 text-white border border-white/5'}`}
+        <button 
+          onClick={() => setIsRecording(!isRecording)} 
+          className={`flex-1 py-6 rounded-[2.5rem] font-black flex items-center justify-center gap-3 transition-all ${
+            isRecording 
+              ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
+              : 'bg-slate-900 text-white border border-white/10 shadow-2xl'
+          }`}
         >
           {isRecording ? <StopCircle className="w-6 h-6" /> : <Camera className="w-6 h-6" />}
-          {isRecording ? 'STOP AI' : 'START AI'}
+          {isRecording ? 'STOP SESSION' : 'START AI TRACK'}
         </button>
         <button 
-          onClick={() => onFinish(`${gamesA}-${gamesB}`, gamesA > gamesB)}
-          className="flex-1 py-6 bg-lime-400 text-slate-950 font-black rounded-[2rem] flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+          onClick={() => onFinish(`${gamesA}-${gamesB}`, gamesA > gamesB)} 
+          className="flex-1 py-6 bg-white text-slate-950 font-black rounded-[2.5rem] flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all hover:bg-slate-100"
         >
-          <Save className="w-6 h-6" /> FINISH MATCH
+          <Save className="w-6 h-6" /> FINAL SCORE
         </button>
       </div>
 
-      <div className="space-y-4">
-         <div className="flex items-center justify-between px-2">
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Live Point Timeline</h3>
-            <Activity className="w-4 h-4 text-lime-400 animate-pulse" />
+      <div className="space-y-4 pt-4">
+         <div className="flex items-center justify-between px-4">
+            <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em]">Live Match Engine</h3>
+            <GripHorizontal className="w-4 h-4 text-slate-800" />
          </div>
          <div className="grid gap-3">
             {logs.length === 0 ? (
-               <div className="text-center py-12 text-slate-700 bg-slate-900/10 border-2 border-dashed border-slate-800 rounded-[2.5rem]">
-                  <p className="font-bold text-xs italic">Awaiting first point detection...</p>
+               <div className="text-center py-20 text-slate-700 bg-slate-950 border-2 border-dashed border-white/5 rounded-[3rem] px-8">
+                  <Activity className="w-8 h-8 mx-auto mb-4 opacity-20" />
+                  <p className="font-bold text-xs italic">Awaiting technical detection... Align camera with the back glass for optimal Bandeja & Smash tracking.</p>
                </div>
             ) : (
                logs.map((log, i) => (
-                  <div key={i} className={`flex items-center gap-4 p-4 rounded-3xl border ${log.isHighlight ? 'bg-lime-500/5 border-lime-500/20' : 'bg-slate-900/40 border-white/5'}`}>
-                     {log.frame && <img src={log.frame} className="w-16 h-12 rounded-xl object-cover ring-1 ring-white/5" />}
+                  <div key={i} className={`flex items-center gap-5 p-5 rounded-[2.5rem] border animate-in slide-in-from-bottom-4 duration-500 ${
+                    log.isHighlight ? 'bg-lime-400/5 border-lime-400/20 shadow-[0_10px_30px_rgba(163,230,53,0.05)]' : 'bg-slate-900/40 border-white/5 shadow-xl'
+                  }`}>
+                     {log.frame && (
+                       <div className="relative w-24 h-16 shrink-0">
+                         <img src={log.frame} className="w-full h-full rounded-2xl object-cover ring-2 ring-white/5 shadow-inner" />
+                         {log.isHighlight && <div className="absolute inset-0 ring-2 ring-lime-400/50 rounded-2xl" />}
+                       </div>
+                     )}
                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                           <span className="text-[10px] font-black text-lime-400 bg-lime-400/10 px-2 py-0.5 rounded-lg">{log.score}</span>
-                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        <div className="flex items-center gap-3 mb-1.5">
+                           <span className="text-[10px] font-black text-lime-400 bg-lime-400/10 px-3 py-1 rounded-lg italic tabular-nums">{log.score}</span>
+                           {log.isHighlight && (
+                             <span className="flex items-center gap-1.5 text-[10px] font-black text-lime-400 uppercase tracking-widest">
+                               <Zap className="w-3 h-3 fill-current" /> HIGHLIGHT
+                             </span>
+                           )}
                         </div>
-                        <p className="text-xs text-slate-400 font-medium truncate">{log.description}</p>
+                        <p className="text-[13px] text-slate-300 font-medium leading-snug">{log.description}</p>
                      </div>
                   </div>
                ))

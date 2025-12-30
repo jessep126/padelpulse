@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { League, LeagueMember, LeagueMatch, UserProfile } from '../types';
-import { Trophy, Users, History, Plus, ChevronLeft, ShieldCheck, UserPlus, Share2, Search, ArrowRight, Check } from 'lucide-react';
+import { Trophy, Users, History, Plus, ChevronLeft, ShieldCheck, UserPlus, Share2, Search, ArrowRight, Check, Shield } from 'lucide-react';
 
 interface LeagueDashboardViewProps {
   league: League;
@@ -19,6 +19,7 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
   const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
 
   const isAdmin = league.members.find(m => m.id === userId)?.role === 'admin';
+  const isTournament = league.type === 'tournament';
 
   const filteredUsers = searchQuery.length > 1 
     ? allPlatformUsers.filter(u => 
@@ -28,11 +29,11 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
     : [];
 
   const handleShareInvite = async () => {
-    const shareText = `Join my Padel league "${league.name}" on PadelPulse AI! Track matches, climb the standings, and see your highlights.`;
+    const shareText = `Join my Padel ${league.type} "${league.name}" on PadelPulse AI! Track matches and climb the standings.`;
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Padel League Invite',
+          title: `Padel ${league.type === 'league' ? 'League' : 'Tournament'} Invite`,
           text: shareText,
           url: window.location.href
         });
@@ -57,7 +58,6 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
     
     if (!p1 || !p2 || !score || !winner) return;
 
-    // Fixed: Added missing properties to satisfy LeagueMatch interface
     const newMatch: LeagueMatch = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toLocaleDateString(),
@@ -94,8 +94,10 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
         <div>
           <h2 className="text-2xl font-black text-white">{league.name.toUpperCase()}</h2>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-3 h-3 text-lime-400" />
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">League Admin: You</p>
+            {isTournament ? <Trophy className="w-3 h-3 text-blue-400" /> : <ShieldCheck className="w-3 h-3 text-lime-400" />}
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
+              {isTournament ? 'Organizer' : 'League Admin'}: You
+            </p>
           </div>
         </div>
       </div>
@@ -110,7 +112,7 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
             key={tab.id}
             onClick={() => { setActiveTab(tab.id as any); setIsSearching(false); }}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl transition-all font-bold text-xs ${
-              activeTab === tab.id && !isSearching ? 'bg-lime-400 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'
+              activeTab === tab.id && !isSearching ? (isTournament ? 'bg-blue-500 text-white shadow-lg' : 'bg-lime-400 text-slate-950 shadow-lg') : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <tab.icon className="w-4 h-4" />
@@ -154,7 +156,7 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
                  <button 
                    onClick={() => invitePlayer(u)}
                    disabled={invitedIds.has(u.id)}
-                   className={`p-3 rounded-xl transition-all ${invitedIds.has(u.id) ? 'bg-slate-800 text-lime-400' : 'bg-lime-400 text-slate-950 hover:scale-105 active:scale-95'}`}
+                   className={`p-3 rounded-xl transition-all ${invitedIds.has(u.id) ? (isTournament ? 'bg-slate-800 text-blue-400' : 'bg-slate-800 text-lime-400') : (isTournament ? 'bg-blue-500 text-white hover:scale-105 active:scale-95' : 'bg-lime-400 text-slate-950 hover:scale-105 active:scale-95')}`}
                  >
                    {invitedIds.has(u.id) ? <Check className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />}
                  </button>
@@ -188,7 +190,7 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
                   {[...league.members].sort((a,b) => b.wins - a.wins).map((m, i) => (
                     <tr key={m.id} className="group hover:bg-white/5 transition-colors">
                       <td className="px-6 py-4">
-                        <span className={`w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-black ${i < 3 ? 'bg-lime-400 text-slate-950 shadow-lg shadow-lime-400/20' : 'bg-slate-800 text-slate-400'}`}>
+                        <span className={`w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-black ${i < 3 ? (isTournament ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-lime-400 text-slate-950 shadow-lg shadow-lime-400/20') : 'bg-slate-800 text-slate-400'}`}>
                           {i + 1}
                         </span>
                       </td>
@@ -197,7 +199,7 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
                           <img src={m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.name}`} className="w-8 h-8 rounded-lg bg-slate-800" />
                           <div>
                              <p className="text-white font-black text-sm">{m.name}</p>
-                             {m.role === 'admin' && <span className="text-[8px] text-lime-400 font-bold uppercase tracking-widest">Admin</span>}
+                             {m.role === 'admin' && <span className={`text-[8px] font-bold uppercase tracking-widest ${isTournament ? 'text-blue-400' : 'text-lime-400'}`}>Admin</span>}
                           </div>
                         </div>
                       </td>
@@ -214,13 +216,13 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
           {activeTab === 'matches' && (
             <div className="space-y-4">
               {isAdmin && (
-                <button onClick={addManualMatch} className="w-full py-5 bg-lime-400 text-slate-950 font-black rounded-3xl flex items-center justify-center gap-3 shadow-xl shadow-lime-500/10">
-                  <Plus className="w-5 h-5" /> ADD MATCH RESULT
+                <button onClick={addManualMatch} className={`w-full py-5 font-black rounded-3xl flex items-center justify-center gap-3 shadow-xl ${isTournament ? 'bg-blue-500 text-white shadow-blue-500/10' : 'bg-lime-400 text-slate-950 shadow-lime-500/10'}`}>
+                  <Plus className="w-5 h-5" /> ADD {isTournament ? 'TOURNAMENT' : 'MATCH'} RESULT
                 </button>
               )}
               {league.matches.length === 0 ? (
                 <div className="text-center py-24 text-slate-700 bg-slate-900/10 border-2 border-dashed border-slate-800 rounded-[3rem]">
-                  <p className="font-bold text-sm italic">No matches recorded in this league yet.</p>
+                  <p className="font-bold text-sm italic">No matches recorded in this {league.type} yet.</p>
                 </div>
               ) : (
                 <div className="grid gap-3">
@@ -228,14 +230,14 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
                     <div key={m.id} className="bg-slate-900/50 border border-white/5 p-5 rounded-[2.5rem] shadow-xl">
                       <div className="flex justify-between items-center mb-4 text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         <span>{m.date}</span>
-                        <span className="text-lime-400">LEAGUE MATCH</span>
+                        <span className={isTournament ? 'text-blue-400' : 'text-lime-400'}>{isTournament ? 'TOURNAMENT' : 'LEAGUE'} MATCH</span>
                       </div>
                       <div className="flex items-center justify-between text-center gap-4">
-                        <p className={`flex-1 text-sm font-black truncate ${m.winnerId === m.playerA ? 'text-lime-400' : 'text-white'}`}>{m.playerA}</p>
+                        <p className={`flex-1 text-sm font-black truncate ${m.winnerId === m.playerA ? (isTournament ? 'text-blue-400' : 'text-lime-400') : 'text-white'}`}>{m.playerA}</p>
                         <div className="bg-slate-950 px-4 py-2 rounded-xl border border-white/5 min-w-[80px]">
                           <span className="text-white font-black tabular-nums">{m.score}</span>
                         </div>
-                        <p className={`flex-1 text-sm font-black truncate ${m.winnerId === m.playerB ? 'text-lime-400' : 'text-white'}`}>{m.playerB}</p>
+                        <p className={`flex-1 text-sm font-black truncate ${m.winnerId === m.playerB ? (isTournament ? 'text-blue-400' : 'text-lime-400') : 'text-white'}`}>{m.playerB}</p>
                       </div>
                     </div>
                   ))}
@@ -256,7 +258,9 @@ const LeagueDashboardView: React.FC<LeagueDashboardViewProps> = ({ league, userI
                    </button>
                    <button 
                      onClick={handleShareInvite}
-                     className="py-4 bg-lime-400/10 border border-lime-400/20 text-lime-400 font-black text-xs rounded-2xl flex items-center justify-center gap-2 hover:bg-lime-400/20 transition-all"
+                     className={`py-4 border font-black text-xs rounded-2xl flex items-center justify-center gap-2 transition-all ${
+                       isTournament ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' : 'bg-lime-400/10 border-lime-400/20 text-lime-400 hover:bg-lime-400/20'
+                     }`}
                    >
                      <Share2 className="w-4 h-4" /> SHARE LINK
                    </button>

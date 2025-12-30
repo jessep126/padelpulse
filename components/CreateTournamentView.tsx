@@ -85,8 +85,8 @@ const CreateTournamentView: React.FC<CreateTournamentViewProps> = ({ matches, se
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-black text-white">TOURNAMENT MAKER</h2>
-          <p className="text-slate-500 text-sm">Organize your local bracket</p>
+          <h2 className="text-2xl font-black text-white uppercase italic">CREATE TOURNAMENT</h2>
+          <p className="text-slate-500 text-sm">Organize your local match bracket</p>
         </div>
         {matches.length > 0 && (
           <button 
@@ -106,14 +106,14 @@ const CreateTournamentView: React.FC<CreateTournamentViewProps> = ({ matches, se
               className={`p-6 rounded-[2.5rem] border-2 transition-all flex flex-col items-center gap-4 ${type === 'Singles' ? 'bg-lime-400 border-lime-400 text-slate-950' : 'bg-slate-900 border-white/5 text-slate-400 hover:border-white/10'}`}
             >
               <User className="w-10 h-10" />
-              <span className="font-black uppercase tracking-widest text-xs">Singles</span>
+              <span className="font-black uppercase tracking-widest text-xs">Singles Tournament</span>
             </button>
             <button 
               onClick={() => setType('Doubles')}
               className={`p-6 rounded-[2.5rem] border-2 transition-all flex flex-col items-center gap-4 ${type === 'Doubles' ? 'bg-lime-400 border-lime-400 text-slate-950' : 'bg-slate-900 border-white/5 text-slate-400 hover:border-white/10'}`}
             >
               <Users className="w-10 h-10" />
-              <span className="font-black uppercase tracking-widest text-xs">Doubles</span>
+              <span className="font-black uppercase tracking-widest text-xs">Doubles Tournament</span>
             </button>
           </div>
           

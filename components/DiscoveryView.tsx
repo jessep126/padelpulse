@@ -1,56 +1,29 @@
 
 import React, { useState, useEffect } from 'react';
-import { MapPin, Users, Trophy, ExternalLink, Navigation, Search, Loader2, X, MessageSquare, Sword, Award, TrendingUp, Calendar, Filter, CheckCircle2, Clock } from 'lucide-react';
+import { MapPin, Users, Trophy, ExternalLink, Navigation, Search, Loader2, X, MessageSquare, Sword, Award, TrendingUp, Calendar, Filter, CheckCircle2, Clock, Send, ChevronLeft, Share2, Star, UserPlus, ShieldCheck } from 'lucide-react';
 import { padelAI } from '../services/geminiService';
-import { PadelLocation, Tournament, Player } from '../types';
+import { PadelLocation, Tournament, UserProfile } from '../types';
 
-const MOCK_PLAYERS: Player[] = [
-  { 
-    id: '1', 
-    name: 'Marco Silva', 
-    level: 'Intermediate', 
-    distance: '1.2 km', 
-    avatar: 'https://picsum.photos/seed/p1/200',
-    bio: 'Competitive player looking for early morning matches. Aggressive at the net.',
-    preferredSide: 'Left',
-    matchesPlayed: 142,
-    winRate: '62%'
-  },
-  { 
-    id: '2', 
-    name: 'Sophie Chen', 
-    level: 'Advanced', 
-    distance: '3.5 km', 
-    avatar: 'https://picsum.photos/seed/p2/200',
-    bio: 'Former tennis player turned padel enthusiast. Strategic and consistent.',
-    preferredSide: 'Right',
-    matchesPlayed: 89,
-    winRate: '75%'
-  },
-  { 
-    id: '3', 
-    name: 'Luca Rossi', 
-    level: 'Beginner', 
-    distance: '0.8 km', 
-    avatar: 'https://picsum.photos/seed/p3/200',
-    bio: 'Just started last month! Looking to learn and improve with friendly games.',
-    preferredSide: 'Both',
-    matchesPlayed: 12,
-    winRate: '40%'
-  },
-];
+interface DiscoveryViewProps {
+  allUsers: UserProfile[];
+  onChallenge: (opponent: UserProfile) => void;
+}
 
-const DiscoveryView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'courts' | 'players' | 'tournaments'>('courts');
+const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) => {
+  const [activeTab, setActiveTab] = useState<'courts' | 'players' | 'tournaments'>('players');
   const [loading, setLoading] = useState(false);
   const [courts, setCourts] = useState<PadelLocation[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-  const [challengeStep, setChallengeStep] = useState<'profile' | 'schedule' | 'success'>('profile');
+  const [selectedPlayer, setSelectedPlayer] = useState<UserProfile | null>(null);
+  const [challengeStep, setChallengeStep] = useState<'profile' | 'schedule' | 'chat' | 'success'>('profile');
   const [filterLevel, setFilterLevel] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [chatMessage, setChatMessage] = useState('');
+  const [shareData, setShareData] = useState<{ text: string; url: string } | null>(null);
 
   const fetchData = async () => {
+    if (activeTab === 'players') return;
     setLoading(true);
     setLocationError(null);
     
@@ -86,35 +59,62 @@ const DiscoveryView: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [activeTab]);
 
-  const handleChallengeClick = () => {
-    setChallengeStep('schedule');
+  const confirmChallenge = async () => {
+    if (!selectedPlayer) return;
+    const userName = localStorage.getItem('padel_user_name') || 'A Player';
+    try {
+      const comms = await padelAI.composeEmail('challenge', { 
+        name: selectedPlayer.name, 
+        sender: userName 
+      });
+      setShareData({ 
+        text: comms.share_text, 
+        url: window.location.origin + "/challenge/" + Math.random().toString(36).substr(2, 9) 
+      });
+      setChallengeStep('success');
+    } catch (e) {
+      setChallengeStep('success');
+    }
   };
 
-  const confirmChallenge = () => {
-    setChallengeStep('success');
-    setTimeout(() => {
-      setSelectedPlayer(null);
-      setChallengeStep('profile');
-    }, 2500);
+  const handleExternalShare = async () => {
+    if (!shareData) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'PadelPulse AI Challenge',
+          text: shareData.text,
+          url: shareData.url
+        });
+      } catch (err) { console.error(err); }
+    } else {
+      navigator.clipboard.writeText(`${shareData.text}\n\nJoin here: ${shareData.url}`);
+      alert("Challenge details copied to clipboard! Paste it into WhatsApp or Email.");
+    }
   };
 
-  const filteredPlayers = MOCK_PLAYERS.filter(p => filterLevel === 'All' || p.level === filterLevel);
+  const filteredPlayers = allUsers.filter(p => {
+    const matchesLevel = filterLevel === 'All' || p.level === filterLevel;
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          p.email.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesLevel && matchesSearch;
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       {/* Navigation Tabs */}
       <div className="flex gap-2 p-1.5 bg-slate-900 rounded-[1.5rem] border border-slate-800">
         {[
-          { id: 'courts', label: 'Courts', icon: MapPin },
           { id: 'players', label: 'Players', icon: Users },
+          { id: 'courts', label: 'Courts', icon: MapPin },
           { id: 'tournaments', label: 'Events', icon: Trophy },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl transition-all font-bold text-sm ${
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl transition-all font-black text-xs ${
               activeTab === tab.id ? 'bg-lime-400 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -125,32 +125,89 @@ const DiscoveryView: React.FC = () => {
       </div>
 
       {activeTab === 'players' && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          <div className="bg-slate-900 p-2 rounded-xl flex-shrink-0">
-            <Filter className="w-4 h-4 text-slate-500" />
+        <div className="space-y-6">
+          <div className="relative group">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600 group-focus-within:text-lime-400 transition-colors" />
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by player name or email..."
+              className="w-full bg-slate-900 border border-white/5 rounded-[2rem] py-5 pl-14 pr-6 text-white text-sm outline-none focus:border-lime-400 transition-all shadow-xl"
+            />
           </div>
-          {['All', 'Beginner', 'Intermediate', 'Advanced', 'Pro'].map((lvl) => (
-            <button
-              key={lvl}
-              onClick={() => setFilterLevel(lvl)}
-              className={`px-4 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all border ${
-                filterLevel === lvl ? 'bg-lime-400 text-slate-950 border-lime-400' : 'bg-slate-950 text-slate-500 border-white/5'
-              }`}
-            >
-              {lvl}
-            </button>
-          ))}
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="bg-slate-900 p-2.5 rounded-xl flex-shrink-0 border border-white/5">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+            </div>
+            {['All', 'Beginner', 'Intermediate', 'Advanced', 'Pro'].map((lvl) => (
+              <button
+                key={lvl}
+                onClick={() => setFilterLevel(lvl)}
+                className={`px-4 py-2 rounded-full text-[10px] font-black whitespace-nowrap transition-all border ${
+                  filterLevel === lvl ? 'bg-lime-400 text-slate-950 border-lime-400' : 'bg-slate-950 text-slate-500 border-white/5'
+                }`}
+              >
+                {lvl.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3">
+            {filteredPlayers.length > 0 ? filteredPlayers.map((player) => (
+              <div 
+                key={player.id} 
+                className="bg-slate-900 border border-white/5 p-5 rounded-[2.5rem] flex items-center justify-between cursor-pointer hover:border-lime-500/30 transition-all shadow-xl active:scale-[0.98] group"
+                onClick={() => { setSelectedPlayer(player); setChallengeStep('profile'); }}
+              >
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="relative">
+                     <img src={player.avatar} className="w-14 h-14 rounded-2xl bg-slate-800 border-2 border-slate-800 shadow-lg group-hover:scale-105 transition-transform" />
+                     <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-lime-400 rounded-full border-4 border-slate-900 flex items-center justify-center">
+                        <div className="w-1 h-1 bg-slate-950 rounded-full" />
+                     </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-black text-white text-base truncate group-hover:text-lime-400 transition-colors">{player.name}</h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[8px] bg-lime-400/10 text-lime-400 font-black px-2 py-0.5 rounded-lg uppercase tracking-widest border border-lime-400/20">{player.level}</span>
+                      <span className="text-slate-500 text-[10px] font-bold truncate opacity-60 italic">{player.email}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChallenge(player);
+                    }}
+                    className="bg-lime-400 p-4 rounded-2xl text-slate-950 shadow-lg shadow-lime-400/10 hover:scale-110 active:scale-90 transition-all"
+                    title="Quick Challenge"
+                  >
+                    <Sword className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center py-24 text-slate-700 bg-slate-950 border-2 border-dashed border-slate-900 rounded-[3rem] px-8">
+                <Users className="w-10 h-10 mx-auto mb-4 opacity-20" />
+                <p className="font-bold text-sm italic">No players found matching your search. Try inviting some friends!</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {loading && (
-        <div className="flex flex-col items-center justify-center py-24 text-slate-500 gap-4">
+        <div className="flex flex-col items-center justify-center py-32 text-slate-500 gap-4">
           <Loader2 className="w-10 h-10 animate-spin text-lime-400" />
-          <p className="animate-pulse font-bold tracking-tight">Finding the best matches for you...</p>
+          <p className="animate-pulse font-black text-xs tracking-widest uppercase">Fetching Global Intelligence...</p>
         </div>
       )}
 
-      {!loading && (
+      {!loading && activeTab !== 'players' && (
         <div className="space-y-4">
           {activeTab === 'courts' && (
             <div className="grid gap-4">
@@ -174,42 +231,6 @@ const DiscoveryView: React.FC = () => {
                   No local courts found in your immediate area.
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === 'players' && (
-            <div className="grid gap-4">
-              {filteredPlayers.map((player) => (
-                <div 
-                  key={player.id} 
-                  onClick={() => { setSelectedPlayer(player); setChallengeStep('profile'); }}
-                  className="bg-slate-900 border border-white/5 p-5 rounded-[2.5rem] flex items-center justify-between cursor-pointer hover:border-lime-500/30 transition-all shadow-xl active:scale-[0.98]"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                       <img src={player.avatar} className="w-16 h-16 rounded-full border-2 border-slate-800 shadow-lg" />
-                       <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-lime-400 rounded-full border-4 border-slate-900 flex items-center justify-center">
-                          <div className="w-1.5 h-1.5 bg-slate-950 rounded-full" />
-                       </div>
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="font-black text-white text-lg truncate">{player.name}</h4>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[10px] bg-lime-400 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase tracking-tighter">{player.level}</span>
-                        <span className="text-slate-500 text-xs font-bold">{player.distance}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1.5 bg-slate-950/50 p-2.5 rounded-2xl border border-white/5">
-                     <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Recent Form</span>
-                     <div className="flex gap-1">
-                        {['W','L','W'].map((f, i) => (
-                          <div key={i} className={`w-4 h-4 rounded-sm flex items-center justify-center text-[8px] font-black ${f === 'W' ? 'bg-lime-400 text-slate-950' : 'bg-red-500/20 text-red-500'}`}>{f}</div>
-                        ))}
-                     </div>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
 
@@ -252,48 +273,54 @@ const DiscoveryView: React.FC = () => {
                     <X className="w-5 h-5" />
                   </button>
                   <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
-                    <img src={selectedPlayer.avatar} className="w-28 h-28 rounded-full border-8 border-slate-900 shadow-2xl" />
+                    <img src={selectedPlayer.avatar} className="w-28 h-28 rounded-3xl border-8 border-slate-900 shadow-2xl" />
                   </div>
                 </div>
                 
                 <div className="px-8 pb-10 mt-14 text-center">
-                  <h3 className="text-3xl font-black text-white">{selectedPlayer.name}</h3>
+                  <h3 className="text-3xl font-black text-white italic tracking-tighter">{selectedPlayer.name}</h3>
                   <div className="flex items-center justify-center gap-2 mb-8">
                     <Award className="w-4 h-4 text-lime-400" />
-                    <p className="text-lime-400 font-black text-sm uppercase tracking-widest">{selectedPlayer.level} PRO</p>
+                    <p className="text-lime-400 font-black text-sm uppercase tracking-widest">{selectedPlayer.level} GRADE</p>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-3 mb-8">
+                  <div className="grid grid-cols-2 gap-3 mb-8">
                     <div className="bg-slate-950/50 p-4 rounded-3xl border border-white/5 shadow-inner">
-                      <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Position</p>
-                      <p className="text-sm font-black text-white">{selectedPlayer.preferredSide}</p>
+                      <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Status</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-lime-400 rounded-full animate-pulse" />
+                        <p className="text-sm font-black text-white">Active</p>
+                      </div>
                     </div>
                     <div className="bg-slate-950/50 p-4 rounded-3xl border border-white/5 shadow-inner">
-                      <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Wins</p>
-                      <p className="text-sm font-black text-white">{Math.floor(selectedPlayer.matchesPlayed! * 0.6)}</p>
-                    </div>
-                    <div className="bg-slate-950/50 p-4 rounded-3xl border border-white/5 shadow-inner">
-                      <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Win %</p>
-                      <p className="text-sm font-black text-lime-400">{selectedPlayer.winRate}</p>
+                      <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Verification</p>
+                      <div className="flex items-center justify-center gap-2">
+                        {/* Fix: ShieldCheck is now imported */}
+                        <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                        <p className="text-sm font-black text-white italic">Verified</p>
+                      </div>
                     </div>
                   </div>
 
                   <div className="text-left mb-10 p-5 bg-slate-950/30 rounded-3xl border border-white/5 shadow-inner">
                     <div className="flex items-center gap-2 mb-2">
                       <TrendingUp className="w-4 h-4 text-slate-500" />
-                      <p className="text-[10px] text-slate-500 font-black uppercase">Scouting Report</p>
+                      <p className="text-[10px] text-slate-500 font-black uppercase">Recent Activity</p>
                     </div>
-                    <p className="text-slate-300 text-sm leading-relaxed italic">"{selectedPlayer.bio}"</p>
+                    <p className="text-slate-300 text-sm leading-relaxed italic">Joined PadelPulse to dominate the local rankings and master the Bajada.</p>
                   </div>
 
                   <div className="flex gap-4">
                     <button 
-                      onClick={handleChallengeClick}
+                      onClick={() => onChallenge(selectedPlayer)}
                       className="flex-1 bg-lime-400 text-slate-950 font-black py-5 rounded-[1.5rem] hover:bg-lime-300 transition-all shadow-xl shadow-lime-500/20 flex items-center justify-center gap-3 active:scale-95"
                     >
-                      <Sword className="w-5 h-5" /> CHALLENGE
+                      <Sword className="w-5 h-5" /> START CHALLENGE
                     </button>
-                    <button className="p-5 bg-slate-800 text-white rounded-[1.5rem] hover:bg-slate-700 transition-all active:scale-95">
+                    <button 
+                      onClick={() => setChallengeStep('chat')}
+                      className="p-5 bg-slate-800 text-white rounded-[1.5rem] hover:bg-slate-700 transition-all active:scale-95"
+                    >
                       <MessageSquare className="w-6 h-6" />
                     </button>
                   </div>
@@ -301,34 +328,45 @@ const DiscoveryView: React.FC = () => {
               </>
             )}
 
-            {challengeStep === 'schedule' && (
-              <div className="p-10 text-center animate-in slide-in-from-right duration-300">
-                <div className="w-20 h-20 bg-lime-400/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Clock className="w-10 h-10 text-lime-400" />
-                </div>
-                <h3 className="text-2xl font-black text-white mb-2">Schedule Match</h3>
-                <p className="text-slate-500 text-sm mb-8">Suggest a time to play with {selectedPlayer.name.split(' ')[0]}</p>
-                
-                <div className="space-y-3 mb-10">
-                  {['Today, 18:00', 'Tomorrow, 09:00', 'Sat, 11:30'].map((time) => (
-                    <button key={time} className="w-full py-4 bg-slate-950 border border-white/5 rounded-2xl text-white font-bold hover:border-lime-400/50 transition-all active:scale-95">
-                      {time}
-                    </button>
-                  ))}
+            {challengeStep === 'chat' && (
+              <div className="flex flex-col h-[500px] animate-in slide-in-from-right duration-300">
+                <div className="p-6 border-b border-white/10 flex items-center gap-4">
+                  <button onClick={() => setChallengeStep('profile')} className="p-2 bg-slate-800 rounded-xl text-slate-400 hover:text-white">
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <img src={selectedPlayer.avatar} className="w-10 h-10 rounded-full border border-white/10" />
+                  <div>
+                    <h4 className="text-white font-black text-sm">{selectedPlayer.name}</h4>
+                    <p className="text-[9px] text-lime-400 font-bold uppercase tracking-widest">Online Now</p>
+                  </div>
                 </div>
 
-                <div className="flex flex-col gap-3">
+                <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-950/50">
+                   <div className="flex justify-start">
+                      <div className="bg-slate-800 text-white px-4 py-3 rounded-2xl rounded-tl-none text-xs max-w-[80%] shadow-lg">
+                        Hey! I saw your profile. Up for a match this weekend?
+                      </div>
+                   </div>
+                   <div className="flex justify-end">
+                      <div className="bg-lime-400 text-slate-950 px-4 py-3 rounded-2xl rounded-tr-none text-xs font-bold max-w-[80%] shadow-lg">
+                         Sure! Which courts do you prefer?
+                      </div>
+                   </div>
+                </div>
+
+                <div className="p-4 bg-slate-900 border-t border-white/10 flex gap-3">
+                  <input 
+                    type="text" 
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    placeholder="Type a message..."
+                    className="flex-1 bg-slate-950 border border-white/5 rounded-2xl px-4 py-3 text-white text-xs outline-none focus:border-lime-400 transition-all"
+                  />
                   <button 
-                    onClick={confirmChallenge}
-                    className="w-full bg-lime-400 text-slate-950 font-black py-5 rounded-3xl shadow-xl shadow-lime-500/10 active:scale-95"
+                    onClick={() => setChatMessage('')}
+                    className="p-3 bg-lime-400 text-slate-950 rounded-2xl shadow-lg active:scale-95 transition-all"
                   >
-                    SEND CHALLENGE
-                  </button>
-                  <button 
-                    onClick={() => setChallengeStep('profile')}
-                    className="w-full py-5 text-slate-500 font-black uppercase text-xs"
-                  >
-                    Go Back
+                    <Send className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -339,10 +377,22 @@ const DiscoveryView: React.FC = () => {
                 <div className="w-24 h-24 bg-lime-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-lime-500/30">
                   <CheckCircle2 className="w-12 h-12 text-slate-950" />
                 </div>
-                <h3 className="text-2xl font-black text-white mb-2">Challenge Sent!</h3>
-                <p className="text-slate-400 text-sm">We'll notify you once {selectedPlayer.name.split(' ')[0]} accepts your invite.</p>
-                <div className="mt-10 h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                   <div className="h-full bg-lime-400 animate-loading-bar" />
+                <h3 className="text-2xl font-black text-white mb-2 italic">CHALLENGE READY!</h3>
+                <p className="text-slate-400 text-sm mb-8">Internal invitation sent to {selectedPlayer.name.split(' ')[0]}. Notify them on other apps to confirm.</p>
+                
+                <div className="space-y-4">
+                  <button 
+                    onClick={handleExternalShare}
+                    className="w-full bg-white text-slate-950 font-black py-5 rounded-2xl flex items-center justify-center gap-3 shadow-xl active:scale-95"
+                  >
+                    <Share2 className="w-5 h-5" /> SHARE TO WHATSAPP/EMAIL
+                  </button>
+                  <button 
+                    onClick={() => { setSelectedPlayer(null); setChallengeStep('profile'); }}
+                    className="w-full py-4 text-slate-500 font-black text-[10px] uppercase tracking-widest"
+                  >
+                    CLOSE
+                  </button>
                 </div>
               </div>
             )}
@@ -352,13 +402,6 @@ const DiscoveryView: React.FC = () => {
 
       {/* Animation Styles */}
       <style>{`
-        @keyframes loading-bar {
-          from { width: 0%; }
-          to { width: 100%; }
-        }
-        .animate-loading-bar {
-          animation: loading-bar 2.5s linear forwards;
-        }
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
