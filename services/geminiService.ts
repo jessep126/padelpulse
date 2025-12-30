@@ -5,8 +5,9 @@ import { PadelLocation, Tournament } from "../types";
 export class PadelAIService {
   constructor() {}
 
+  // Fix: Use process.env.API_KEY directly as per initialization guidelines
   private getClient() {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    return new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   }
 
   async analyzeMatchFrame(base64Image: string, currentScore: string, courtEnd: string = "Side A") {
@@ -78,6 +79,7 @@ export class PadelAIService {
 
   async generateSpeech(text: string): Promise<string | undefined> {
     try {
+      // Fix: Use getClient to ensure API_KEY is provided
       const ai = this.getClient();
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
