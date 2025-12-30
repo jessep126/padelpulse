@@ -5,8 +5,12 @@ import { PadelLocation, Tournament } from "../types";
 export class PadelAIService {
   constructor() {}
 
+  private getClient() {
+    return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  }
+
   async analyzeMatchFrame(base64Image: string, currentScore: string, courtEnd: string = "Side A") {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = this.getClient();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: {
@@ -37,7 +41,7 @@ export class PadelAIService {
   }
 
   async composeEmail(type: 'welcome' | 'challenge' | 'invite', data: any) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = this.getClient();
     const prompt = `Compose a professional, high-energy Padel-themed communication for the following scenario:
       Type: ${type}
       Recipient Name: ${data.name}
@@ -74,7 +78,7 @@ export class PadelAIService {
 
   async generateSpeech(text: string): Promise<string | undefined> {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = this.getClient();
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Say this like a high-energy padel commentator: ${text}` }] }],
@@ -90,12 +94,12 @@ export class PadelAIService {
       return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     } catch (e) {
       console.error("TTS failed", e);
-      return undefined;
+      throw e;
     }
   }
 
   async findNearbyCourts(lat: number, lng: number): Promise<PadelLocation[]> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = this.getClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: "Find Padel clubs, indoor/outdoor courts, and sports centers near these coordinates.",
@@ -120,7 +124,7 @@ export class PadelAIService {
   }
 
   async findUpcomingTournaments(location: string): Promise<Tournament[]> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = this.getClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Search for official Padel tournaments (FIP, Premier Padel, or local amateur opens) in ${location} for the next 12 months.`,

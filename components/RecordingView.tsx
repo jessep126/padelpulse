@@ -35,9 +35,10 @@ interface RecordingViewProps {
   homeName: string;
   opponentName: string;
   onFinish: (score: string, teamAWon: boolean) => void;
+  onAiFailure?: () => void;
 }
 
-const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName, opponentName, onFinish }) => {
+const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName, opponentName, onFinish, onAiFailure }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -57,7 +58,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
   const teamAName = tournamentMatch ? tournamentMatch.sideA.join(' & ') : homeName;
   const teamBName = tournamentMatch ? tournamentMatch.sideB.join(' & ') : opponentName;
 
-  // Initialize AudioContext for TTS
   useEffect(() => {
     audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     return () => {
@@ -67,15 +67,21 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
 
   const announceScore = async (customText?: string) => {
     if (isMuted) return;
-    const text = customText || `Score is ${PADEL_SCORES[scoreA]} ${PADEL_SCORES[scoreB]}`;
-    const base64Audio = await padelAI.generateSpeech(text);
-    if (base64Audio && audioCtxRef.current) {
-      const audioData = decodeBase64(base64Audio);
-      const buffer = await decodeAudioData(audioData, audioCtxRef.current, 24000, 1);
-      const source = audioCtxRef.current.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioCtxRef.current.destination);
-      source.start();
+    try {
+      const text = customText || `Score is ${PADEL_SCORES[scoreA]} ${PADEL_SCORES[scoreB]}`;
+      const base64Audio = await padelAI.generateSpeech(text);
+      if (base64Audio && audioCtxRef.current) {
+        const audioData = decodeBase64(base64Audio);
+        const buffer = await decodeAudioData(audioData, audioCtxRef.current, 24000, 1);
+        const source = audioCtxRef.current.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtxRef.current.destination);
+        source.start();
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+        onAiFailure?.();
+      }
     }
   };
 
@@ -105,7 +111,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
       }
     }
 
-    // Check for Game win
     if (nextA === 5) {
       setGamesA(prev => prev + 1);
       setGameWinnerName(teamAName);
@@ -161,6 +166,10 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
       }
     } catch (e) {
       console.error("AI Analysis error:", e);
+      if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+        onAiFailure?.();
+        setIsRecording(false);
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -169,7 +178,7 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
   useEffect(() => {
     let interval: number;
     if (isRecording) {
-      interval = window.setInterval(runAnalysis, 10000); // Analyze every 10s for point detection
+      interval = window.setInterval(runAnalysis, 10000);
     }
     return () => clearInterval(interval);
   }, [isRecording, scoreA, scoreB, showGameCelebration, courtEnd, isAnalyzing]);
@@ -197,15 +206,13 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
         </div>
       )}
 
-      {/* Viewfinder with Padel Court Guide */}
       <div className="relative aspect-video bg-black rounded-[3rem] overflow-hidden shadow-2xl ring-2 ring-white/5 group">
         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-80" />
         <canvas ref={canvasRef} className="hidden" />
         
-        {/* Alignment Overlay */}
         <div className="absolute inset-0 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
-           <div className="absolute inset-x-0 bottom-[15%] h-px bg-white" /> {/* Back service line */}
-           <div className="absolute inset-y-0 left-1/2 w-px bg-white" /> {/* Center line */}
+           <div className="absolute inset-x-0 bottom-[15%] h-px bg-white" />
+           <div className="absolute inset-y-0 left-1/2 w-px bg-white" />
            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-black text-white uppercase tracking-widest bg-black/60 px-4 py-2 rounded-full border border-white/10">Align Service 'T' & Net</div>
         </div>
 
@@ -239,7 +246,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ tournamentMatch, homeName
           )}
         </div>
 
-        {/* Real-time Floating Scoreboard */}
         <div className="absolute inset-x-0 bottom-8 flex justify-center scale-90 sm:scale-100">
            <div className="bg-slate-950/90 backdrop-blur-2xl px-12 py-5 rounded-[2.5rem] border border-white/10 flex gap-12 items-center shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
               <div className="text-center">

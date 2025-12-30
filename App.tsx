@@ -16,6 +16,14 @@ import NotificationCenter from './components/NotificationCenter';
 import PlayerSelectorView from './components/PlayerSelectorView';
 import EmailSimulator, { EmailMessage } from './components/EmailSimulator';
 import { padelAI } from './services/geminiService';
+import { KeyRound, Zap, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+
+// Using any to resolve conflict with pre-existing AIStudio global type in the environment
+declare global {
+  interface Window {
+    aistudio: any;
+  }
+}
 
 const MOCK_GLOBAL_USERS: UserProfile[] = [
   { id: 'u1', name: 'Ale Galán', email: 'ale@padelpuls.com', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ale', level: 'Pro', verified: true },
@@ -26,6 +34,7 @@ const MOCK_GLOBAL_USERS: UserProfile[] = [
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>(AppView.DASHBOARD);
+  const [isAiConnected, setIsAiConnected] = useState<boolean | null>(null);
   const [pendingMatchMode, setPendingMatchMode] = useState<AppView | null>(null);
   const [selectedOpponent, setSelectedOpponent] = useState<UserProfile | null>(null);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
@@ -65,8 +74,34 @@ const App: React.FC = () => {
   const [tournamentMatches, setTournamentMatches] = useState<TournamentMatch[]>([]);
 
   useEffect(() => {
-    if (!userName) setActiveView(AppView.ONBOARDING);
-  }, [userName]);
+    checkAiConnection();
+  }, []);
+
+  const checkAiConnection = async () => {
+    try {
+      // Cast to any to bypass potential strict global type checks on aistudio
+      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+      setIsAiConnected(hasKey);
+    } catch (e) {
+      // Fallback if not in AI Studio environment or API is missing
+      setIsAiConnected(true);
+    }
+  };
+
+  const handleConnectAi = async () => {
+    try {
+      // Cast to any to bypass potential strict global type checks on aistudio
+      await (window as any).aistudio.openSelectKey();
+      // Assume selection was successful per race condition guidelines
+      setIsAiConnected(true);
+    } catch (e) {
+      console.error("Failed to open key selector", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!userName && isAiConnected) setActiveView(AppView.ONBOARDING);
+  }, [userName, isAiConnected]);
 
   useEffect(() => {
     localStorage.setItem('padel_user_stats', JSON.stringify(userStats));
@@ -167,26 +202,33 @@ const App: React.FC = () => {
       setNotifications(prev => [notif, ...prev]);
     }
 
-    const emailData = await padelAI.composeEmail('invite', { 
-      name: selectedOpponent.name, 
-      sender: userName,
-      leagueName: 'Match Confirmation'
-    });
-    
-    sendSimulatedEmail(emailData.subject, `[SENT TO ${selectedOpponent.email}]\n\n${emailData.body}`);
+    try {
+      const emailData = await padelAI.composeEmail('invite', { 
+        name: selectedOpponent.name, 
+        sender: userName,
+        leagueName: 'Match Confirmation'
+      });
+      
+      sendSimulatedEmail(emailData.subject, `[SENT TO ${selectedOpponent.email}]\n\n${emailData.body}`);
 
-    if (navigator.share) {
-      if (confirm(`Match finished! Internal notification sent. Would you like to nudge ${selectedOpponent.name} on WhatsApp or other platforms to confirm the result?`)) {
-        try {
-          await navigator.share({
-            title: 'Padel Match Result Confirmation',
-            text: emailData.share_text,
-            url: window.location.origin + "/match/" + matchId
-          });
-        } catch (e) { console.error(e); }
+      if (navigator.share) {
+        if (confirm(`Match finished! Internal notification sent. Would you like to nudge ${selectedOpponent.name} on WhatsApp or other platforms to confirm the result?`)) {
+          try {
+            await navigator.share({
+              title: 'Padel Match Result Confirmation',
+              text: emailData.share_text,
+              url: window.location.origin + "/match/" + matchId
+            });
+          } catch (e) { console.error(e); }
+        }
+      } else {
+        alert(`Match finished! Result sent for confirmation. Opponent notified.`);
       }
-    } else {
-      alert(`Match finished! Result sent for confirmation. Opponent notified.`);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+        setIsAiConnected(false);
+      }
+      alert(`Match finished internally, but AI notification failed.`);
     }
 
     setSelectedOpponent(null);
@@ -224,9 +266,56 @@ const App: React.FC = () => {
     }));
   };
 
+  if (isAiConnected === null) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-12 h-12 text-lime-400 animate-spin" />
+        <p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Initializing AI Engine...</p>
+      </div>
+    );
+  }
+
+  if (isAiConnected === false) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-24 h-24 bg-lime-400/10 rounded-[2.5rem] flex items-center justify-center mb-8 relative">
+           <Zap className="w-12 h-12 text-lime-400 fill-current" />
+           <div className="absolute -top-2 -right-2 bg-red-500 p-2 rounded-full border-4 border-slate-950">
+              <AlertCircle className="w-4 h-4 text-white" />
+           </div>
+        </div>
+        <h1 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-4">AI Engine Offline</h1>
+        <p className="text-slate-400 max-w-sm mb-12 text-sm leading-relaxed">
+          PadelPulse requires a connected <span className="text-white font-bold">Google Gemini API Key</span> from a paid GCP project to analyze your match logic and generate commentary.
+        </p>
+        <button 
+          onClick={handleConnectAi}
+          className="w-full max-w-xs bg-lime-400 text-slate-950 font-black py-6 rounded-[2rem] flex items-center justify-center gap-3 shadow-2xl shadow-lime-500/20 active:scale-95 transition-all"
+        >
+          <KeyRound className="w-6 h-6" /> CONNECT AI ENGINE
+        </button>
+        <a 
+          href="https://ai.google.dev/gemini-api/docs/billing" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="mt-6 text-[10px] font-black text-slate-600 uppercase tracking-widest hover:text-white transition-colors underline"
+        >
+          View Billing Documentation
+        </a>
+      </div>
+    );
+  }
+
   const renderView = () => {
     if (activeView === AppView.ONBOARDING) {
-      return <OnboardingView existingUsers={allUsers} onComplete={handleCompleteOnboarding} onSendEmail={sendSimulatedEmail} />;
+      return (
+        <OnboardingView 
+          existingUsers={allUsers} 
+          onComplete={handleCompleteOnboarding} 
+          onSendEmail={sendSimulatedEmail} 
+          onAiFailure={() => setIsAiConnected(false)}
+        />
+      );
     }
 
     switch (activeView) {
@@ -305,24 +394,31 @@ const App: React.FC = () => {
               localStorage.setItem(targetNotifsKey, JSON.stringify([newNotif, ...existingTargetNotifs]));
               if (targetId === userId) setNotifications(prev => [newNotif, ...prev]);
 
-              const emailData = await padelAI.composeEmail('invite', { 
-                name: target.name, 
-                sender: userName,
-                leagueName: league.name
-              });
-              
-              sendSimulatedEmail(emailData.subject, `[SENT TO ${target.email}]\n\n${emailData.body}`);
-              
-              if (navigator.share && confirm(`Invite sent to internal platform. Nudge ${target.name} on other apps?`)) {
-                try {
-                  await navigator.share({
-                    title: 'Padel League Invitation',
-                    text: emailData.share_text,
-                    url: window.location.href
-                  });
-                } catch (e) { console.error(e); }
-              } else {
-                alert(`Invite sent!`);
+              try {
+                const emailData = await padelAI.composeEmail('invite', { 
+                  name: target.name, 
+                  sender: userName,
+                  leagueName: league.name
+                });
+                
+                sendSimulatedEmail(emailData.subject, `[SENT TO ${target.email}]\n\n${emailData.body}`);
+                
+                if (navigator.share && confirm(`Invite sent to internal platform. Nudge ${target.name} on other apps?`)) {
+                  try {
+                    await navigator.share({
+                      title: 'Padel League Invitation',
+                      text: emailData.share_text,
+                      url: window.location.href
+                    });
+                  } catch (e) { console.error(e); }
+                } else {
+                  alert(`Invite sent!`);
+                }
+              } catch (e) {
+                if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+                  setIsAiConnected(false);
+                }
+                alert(`Invite sent internally, AI template failed.`);
               }
             }}
             onUpdateLeague={(updated) => setLeagues(leagues.map(l => l.id === updated.id ? updated : l))}
@@ -350,6 +446,7 @@ const App: React.FC = () => {
             homeName={userName || 'Home Team'}
             opponentName={selectedOpponent?.name || 'Opponent'}
             onFinish={handleMatchFinish}
+            onAiFailure={() => setIsAiConnected(false)}
           />
         );
       case AppView.DISCOVERY: 
@@ -360,6 +457,7 @@ const App: React.FC = () => {
               setSelectedOpponent(opponent);
               setActiveView(AppView.MATCH_MODE_SELECT);
             }} 
+            onAiFailure={() => setIsAiConnected(false)}
           />
         );
       case AppView.HIGHLIGHTS: return <HighlightsGallery />;

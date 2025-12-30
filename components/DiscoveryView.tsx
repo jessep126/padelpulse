@@ -7,9 +7,11 @@ import { PadelLocation, Tournament, UserProfile } from '../types';
 interface DiscoveryViewProps {
   allUsers: UserProfile[];
   onChallenge: (opponent: UserProfile) => void;
+  // Added onAiFailure to props to handle API key selection resets
+  onAiFailure?: () => void;
 }
 
-const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) => {
+const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge, onAiFailure }) => {
   const [activeTab, setActiveTab] = useState<'courts' | 'players' | 'tournaments'>('players');
   const [loading, setLoading] = useState(false);
   const [courts, setCourts] = useState<PadelLocation[]>([]);
@@ -46,6 +48,10 @@ const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) 
           setTournaments(nearbyTournaments);
         } catch (err) {
           console.error(err);
+          // Handle AI service failure due to API key selection state
+          if (err instanceof Error && err.message.includes("Requested entity was not found")) {
+            onAiFailure?.();
+          }
         } finally {
           setLoading(false);
         }
@@ -75,6 +81,10 @@ const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) 
       });
       setChallengeStep('success');
     } catch (e) {
+      // Handle AI service failure due to API key selection state
+      if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+        onAiFailure?.();
+      }
       setChallengeStep('success');
     }
   };
@@ -238,7 +248,7 @@ const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) 
             <div className="grid gap-4">
               {tournaments.length > 0 ? tournaments.map((t, i) => (
                 <div key={i} className="bg-slate-900 border border-white/5 p-6 rounded-[2.5rem] relative overflow-hidden group shadow-xl">
-                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-20 transition-opacity">
+                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
                     <Trophy className="w-24 h-24 text-lime-400" />
                   </div>
                   <div className="relative z-10">
@@ -295,7 +305,6 @@ const DiscoveryView: React.FC<DiscoveryViewProps> = ({ allUsers, onChallenge }) 
                     <div className="bg-slate-950/50 p-4 rounded-3xl border border-white/5 shadow-inner">
                       <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Verification</p>
                       <div className="flex items-center justify-center gap-2">
-                        {/* Fix: ShieldCheck is now imported */}
                         <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
                         <p className="text-sm font-black text-white italic">Verified</p>
                       </div>

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Zap, ArrowRight, User, Mail, ShieldCheck, Trophy, Target, Star, Lock, RefreshCcw, Loader2, ChevronLeft, UserCheck } from 'lucide-react';
+import { Zap, ArrowRight, User, Mail, ShieldCheck, Trophy, Target, Star, Lock, RefreshCcw, Loader2, ChevronLeft, UserCheck, AlertTriangle } from 'lucide-react';
 import { padelAI } from '../services/geminiService';
 import { UserProfile } from '../types';
 
@@ -8,6 +8,7 @@ interface OnboardingViewProps {
   existingUsers: UserProfile[];
   onComplete: (data: { name: string, email: string, level: string, existingId?: string }) => void;
   onSendEmail: (subject: string, body: string) => void;
+  onAiFailure?: () => void;
 }
 
 const BigBrandLogo = ({ className = "w-32 h-32" }: { className?: string }) => (
@@ -36,7 +37,7 @@ const BigBrandLogo = ({ className = "w-32 h-32" }: { className?: string }) => (
   </svg>
 );
 
-const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComplete, onSendEmail }) => {
+const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComplete, onSendEmail, onAiFailure }) => {
   const [step, setStep] = useState<'welcome' | 'email' | 'verification' | 'identity' | 'level'>('welcome');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -56,7 +57,6 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
     setIsSending(true);
     setError('');
     
-    // Check if account exists
     const existing = existingUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
     setAccountFound(existing || null);
 
@@ -71,7 +71,12 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
       onSendEmail(emailContent.subject, emailContent.body);
       setStep('verification');
     } catch (e) {
-      setError('System busy. Please try again.');
+      console.error("Onboarding AI Error:", e);
+      if (e instanceof Error && e.message.includes("Requested entity was not found")) {
+        onAiFailure?.();
+      } else {
+        setError(e instanceof Error ? e.message : 'AI engine busy. Check your API configuration.');
+      }
     } finally {
       setIsSending(false);
     }
@@ -80,7 +85,6 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
   const handleVerify = () => {
     if (code === generatedCode) {
       if (accountFound) {
-        // Sign in existing user immediately
         onComplete({ 
           name: accountFound.name, 
           email: accountFound.email, 
@@ -88,7 +92,6 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
           existingId: accountFound.id 
         });
       } else {
-        // Proceed with registration for new user
         setStep('identity');
       }
     } else {
@@ -98,7 +101,7 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-[100] flex flex-col items-center justify-center p-8 overflow-y-auto">
-      <div className="w-full max-w-sm space-y-12 animate-in fade-in duration-700">
+      <div className="w-full max-sm space-y-12 animate-in fade-in duration-700">
         
         {step === 'welcome' && (
           <div className="flex flex-col items-center text-center space-y-12 animate-in zoom-in duration-500">
@@ -145,7 +148,12 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ existingUsers, onComple
                   className="w-full bg-slate-900 border border-white/5 rounded-[2rem] py-5 pl-16 pr-8 text-white font-bold outline-none focus:border-lime-400 transition-all shadow-inner"
                 />
               </div>
-              {error && <p className="text-red-500 text-xs text-center font-bold">{error}</p>}
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start gap-3 animate-in shake duration-300">
+                   <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                   <p className="text-red-500 text-[10px] font-black uppercase tracking-widest leading-tight">{error}</p>
+                </div>
+              )}
             </div>
 
             <button
